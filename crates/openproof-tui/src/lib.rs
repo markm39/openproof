@@ -2,13 +2,11 @@ pub mod markdown;
 
 use openproof_core::{AppState, Overlay};
 use ratatui::{
+    buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{
-        Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar,
-        ScrollbarOrientation, ScrollbarState, Wrap,
-    },
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame,
 };
 
@@ -164,13 +162,66 @@ fn draw_chat_area(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
         .wrap(Wrap { trim: false });
     f.render_widget(para, area);
 
-    // Scrollbar on the right edge
+    // Smooth scrollbar (half-block characters for 2x resolution)
     if total_visual > state.visible_height {
-        let mut scrollbar_state = ScrollbarState::new(max_scroll).position(scroll_from_top);
-        let scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
-            .thumb_style(Style::default().fg(Color::DarkGray))
-            .track_style(Style::default().fg(Color::Rgb(40, 40, 40)));
-        f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        let show = state
+            .last_scroll_at
+            .map(|t| t.elapsed().as_millis() < 1500)
+            .unwrap_or(false);
+        if show {
+            draw_smooth_scrollbar(f.buffer_mut(), area, scroll_from_top, max_scroll);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Smooth scrollbar (half-block rendering for 2x vertical resolution)
+// ---------------------------------------------------------------------------
+
+/// Render a scrollbar on the rightmost column of `area` using half-block
+/// characters for sub-cell precision. `position` is the current scroll-from-top
+/// value and `max_position` is the maximum scroll-from-top value.
+fn draw_smooth_scrollbar(buf: &mut Buffer, area: Rect, position: usize, max_position: usize) {
+    if area.height < 2 || area.width == 0 || max_position == 0 {
+        return;
+    }
+    let col = area.x + area.width - 1;
+    let height = area.height as usize;
+    let half_cells = height * 2; // 2x resolution
+
+    // Thumb size: proportional to viewport/content ratio, minimum 3 half-cells.
+    let thumb_size = ((height as f64 / (height as f64 + max_position as f64)) * half_cells as f64)
+        .round()
+        .max(3.0) as usize;
+    let thumb_size = thumb_size.min(half_cells);
+
+    // Thumb position in half-cell units.
+    let track_range = half_cells.saturating_sub(thumb_size);
+    let thumb_start = if max_position > 0 {
+        (position as f64 / max_position as f64 * track_range as f64).round() as usize
+    } else {
+        0
+    };
+    let thumb_end = thumb_start + thumb_size;
+
+    let color = Color::Rgb(100, 100, 100);
+
+    for row in 0..height {
+        let top_half = row * 2;
+        let bot_half = row * 2 + 1;
+        let top_in = top_half >= thumb_start && top_half < thumb_end;
+        let bot_in = bot_half >= thumb_start && bot_half < thumb_end;
+
+        let (ch, style) = match (top_in, bot_in) {
+            (true, true) => ("█", Style::default().fg(color)),
+            (true, false) => ("▀", Style::default().fg(color)),
+            (false, true) => ("▄", Style::default().fg(color)),
+            (false, false) => continue, // invisible -- don't overwrite content
+        };
+
+        let cell = &mut buf[(col, area.y + row as u16)];
+        cell.set_symbol(ch);
+        cell.set_style(style);
     }
 }
 

@@ -189,18 +189,22 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
     })
 }
 
+fn is_lean_project_dir(dir: &Path) -> bool {
+    dir.join("lakefile.lean").exists() || dir.join("lakefile.toml").exists()
+}
+
 fn resolve_lean_project_dir() -> PathBuf {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    if cwd.join("lakefile.lean").exists() {
+    if is_lean_project_dir(&cwd) {
         return cwd;
     }
     let lean_sub = cwd.join("lean");
-    if lean_sub.join("lakefile.lean").exists() {
+    if is_lean_project_dir(&lean_sub) {
         return lean_sub;
     }
     if let Ok(launch) = env::var("OPENPROOF_LAUNCH_CWD") {
         let launch_lean = PathBuf::from(&launch).join("lean");
-        if launch_lean.join("lakefile.lean").exists() {
+        if is_lean_project_dir(&launch_lean) {
             return launch_lean;
         }
     }
@@ -945,16 +949,34 @@ async fn run_app(
                     }
                 }
                 Event::Mouse(mouse) => {
-                    use crossterm::event::MouseEventKind;
-                    let scroll_event = match mouse.kind {
-                        MouseEventKind::ScrollUp => Some(AppEvent::ScrollTranscriptUp),
-                        MouseEventKind::ScrollDown => Some(AppEvent::ScrollTranscriptDown),
-                        _ => None,
-                    };
-                    if let Some(evt) = scroll_event {
-                        if let Some(write) = state.apply(evt) {
-                            persist_write(tx.clone(), store.clone(), write);
+                    use crossterm::event::{MouseButton, MouseEventKind};
+                    match mouse.kind {
+                        MouseEventKind::ScrollUp => {
+                            let _ = state.apply(AppEvent::ScrollTranscriptUp);
                         }
+                        MouseEventKind::ScrollDown => {
+                            let _ = state.apply(AppEvent::ScrollTranscriptDown);
+                        }
+                        MouseEventKind::Down(MouseButton::Left) => {
+                            // Click on rightmost column: jump scroll position.
+                            let term_width = terminal.size()?.width;
+                            if mouse.column + 1 >= term_width && state.visible_height > 0 {
+                                let max = state
+                                    .total_visual_lines
+                                    .saturating_sub(state.visible_height);
+                                if max > 0 {
+                                    let ratio =
+                                        mouse.row as f64 / state.visible_height as f64;
+                                    let scroll_from_top =
+                                        (ratio * max as f64).round() as usize;
+                                    state.scroll_offset =
+                                        max.saturating_sub(scroll_from_top);
+                                    state.last_scroll_at =
+                                        Some(std::time::Instant::now());
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 _ => {}
