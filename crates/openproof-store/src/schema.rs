@@ -242,6 +242,47 @@ pub(crate) fn open_connection(db_path: &Path) -> Result<Connection> {
         );
         "#,
     )?;
+
+    // Migration: old schema used session_json blob; new schema uses separate columns.
+    ensure_column(
+        &conn,
+        "sessions",
+        "transcript_json",
+        "ALTER TABLE sessions ADD COLUMN transcript_json TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    ensure_column(
+        &conn,
+        "sessions",
+        "cloud_json",
+        "ALTER TABLE sessions ADD COLUMN cloud_json TEXT NOT NULL DEFAULT '{}'",
+    )?;
+    ensure_column(
+        &conn,
+        "sessions",
+        "proof_json",
+        "ALTER TABLE sessions ADD COLUMN proof_json TEXT NOT NULL DEFAULT '{}'",
+    )?;
+
+    // If old session_json column exists with data, trigger a re-import by
+    // clearing the sessions table. The legacy import on startup will re-read
+    // the JSON files and populate the new columns correctly.
+    {
+        let has_session_json: bool = conn
+            .prepare("PRAGMA table_info(sessions)")
+            .ok()
+            .map(|mut stmt| {
+                stmt.query_map([], |row| row.get::<_, String>(1))
+                    .ok()
+                    .map(|cols| cols.filter_map(Result::ok).any(|c| c == "session_json"))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if has_session_json {
+            // Old schema detected. Drop all sessions so they get re-imported.
+            let _ = conn.execute("DELETE FROM sessions", []);
+        }
+    }
+
     Ok(conn)
 }
 
