@@ -71,6 +71,12 @@ impl AppState {
 
     pub fn submit_composer(&mut self) -> Option<SubmittedInput> {
         let text = self.composer.trim().to_string();
+        // Save to input history (shell-style).
+        if !text.is_empty() && self.input_history.last().map(String::as_str) != Some(&text) {
+            self.input_history.push(text.clone());
+        }
+        self.history_index = None;
+        self.input_draft.clear();
         self.composer.clear();
         self.composer_cursor = 0;
         self.submit_text(text)

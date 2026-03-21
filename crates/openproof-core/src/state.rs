@@ -149,6 +149,12 @@ pub struct AppState {
     pub flushed_turn_count: usize,
     /// Accumulates streaming model output before it's finalized.
     pub streaming_text: String,
+    /// Input history (shell-style Up/Down navigation).
+    pub input_history: Vec<String>,
+    /// Current position in input history (None = not browsing).
+    pub history_index: Option<usize>,
+    /// Draft input saved when entering history browse mode.
+    pub input_draft: String,
 }
 
 impl AppState {
@@ -193,6 +199,9 @@ impl AppState {
             overlay: None,
             flushed_turn_count: 0,
             streaming_text: String::new(),
+            input_history: Vec::new(),
+            history_index: None,
+            input_draft: String::new(),
         }
     }
 }
