@@ -321,6 +321,27 @@ impl AppState {
                     }
                 }
             }
+            // Add a visible notice to the main transcript so the user sees branch activity
+            let role_label = crate::helpers::agent_role_label(
+                session.proof.branches.iter()
+                    .find(|b| b.id == branch_id)
+                    .map(|b| b.role)
+                    .unwrap_or(openproof_protocol::AgentRole::Prover)
+            );
+            let notice_content = match status {
+                AgentStatus::Done => format!("{role_label}: {summary}"),
+                AgentStatus::Error => format!("{role_label} error: {summary}"),
+                AgentStatus::Blocked => format!("{role_label} blocked: {summary}"),
+                _ => format!("{role_label}: {summary}"),
+            };
+            session.transcript.push(TranscriptEntry {
+                id: next_id("native_msg"),
+                role: MessageRole::Notice,
+                title: Some("Agent".to_string()),
+                content: notice_content,
+                created_at: now,
+            });
+
             session.proof.status_line = summary.clone();
             (session.clone(), summary)
         }) {

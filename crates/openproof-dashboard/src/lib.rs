@@ -219,18 +219,18 @@ async fn paper_pdf(
     let tex_path = tmp.join("paper.tex");
     std::fs::write(&tex_path, &tex).map_err(|e| internal_error(e.into()))?;
 
-    let output = Command::new("pdflatex")
+    let output = Command::new("lualatex")
         .args(["-interaction=nonstopmode", "-halt-on-error", "paper.tex"])
         .current_dir(&tmp)
         .output()
-        .map_err(|e| internal_error(anyhow::anyhow!("pdflatex failed to start: {e}")))?;
+        .map_err(|e| internal_error(anyhow::anyhow!("lualatex failed to start: {e}")))?;
 
     let pdf_path = tmp.join("paper.pdf");
     if !pdf_path.exists() {
         let stderr = String::from_utf8_lossy(&output.stdout);
         return Ok((
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("pdflatex failed:\n{stderr}"),
+            format!("lualatex failed:\n{stderr}"),
         )
             .into_response());
     }
@@ -248,10 +248,30 @@ fn generate_tex(session: &SessionSnapshot) -> String {
         let mut doc = String::new();
         doc.push_str("\\documentclass[11pt]{article}\n");
         doc.push_str("\\usepackage[margin=1in]{geometry}\n");
+        doc.push_str("\\usepackage{fontspec}\n");
         doc.push_str("\\usepackage{amsmath,amssymb,amsthm}\n");
         doc.push_str("\\usepackage{listings}\n");
         doc.push_str("\\usepackage{xcolor}\n");
-        doc.push_str("\\lstset{basicstyle=\\ttfamily\\small,breaklines=true,frame=single,backgroundcolor=\\color{gray!10}}\n");
+        doc.push_str("\\lstset{basicstyle=\\ttfamily\\small,breaklines=true,frame=single,backgroundcolor=\\color{gray!10},literate=\n");
+        doc.push_str("  {ℕ}{{\\ensuremath{\\mathbb{N}}}}1\n");
+        doc.push_str("  {ℝ}{{\\ensuremath{\\mathbb{R}}}}1\n");
+        doc.push_str("  {ℤ}{{\\ensuremath{\\mathbb{Z}}}}1\n");
+        doc.push_str("  {→}{{\\ensuremath{\\to}}}1\n");
+        doc.push_str("  {←}{{\\ensuremath{\\leftarrow}}}1\n");
+        doc.push_str("  {∀}{{\\ensuremath{\\forall}}}1\n");
+        doc.push_str("  {∃}{{\\ensuremath{\\exists}}}1\n");
+        doc.push_str("  {∧}{{\\ensuremath{\\land}}}1\n");
+        doc.push_str("  {∨}{{\\ensuremath{\\lor}}}1\n");
+        doc.push_str("  {≤}{{\\ensuremath{\\leq}}}1\n");
+        doc.push_str("  {≥}{{\\ensuremath{\\geq}}}1\n");
+        doc.push_str("  {≠}{{\\ensuremath{\\neq}}}1\n");
+        doc.push_str("  {∈}{{\\ensuremath{\\in}}}1\n");
+        doc.push_str("  {⟨}{{\\ensuremath{\\langle}}}1\n");
+        doc.push_str("  {⟩}{{\\ensuremath{\\rangle}}}1\n");
+        doc.push_str("  {λ}{{\\ensuremath{\\lambda}}}1\n");
+        doc.push_str("  {∑}{{\\ensuremath{\\sum}}}1\n");
+        doc.push_str("  {∞}{{\\ensuremath{\\infty}}}1\n");
+        doc.push_str("}\n");
         doc.push_str("\\newtheorem{theorem}{Theorem}\n");
         doc.push_str("\\newtheorem{lemma}[theorem]{Lemma}\n");
         doc.push_str("\\newtheorem{proposition}[theorem]{Proposition}\n");
