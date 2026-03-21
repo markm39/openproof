@@ -370,6 +370,42 @@ fn extract_line_number(error_line: &str, scratch_path: &Path) -> Option<usize> {
     None
 }
 
+/// Extract grounding facts from Lean output: #check results, type signatures,
+/// "Try this:" suggestions, and known-good lemma names that Lean reports.
+/// These should be presented front-and-center to the repairer, not buried in error noise.
+pub fn extract_grounding_from_lean_output(stderr: &str, stdout: &str) -> Vec<String> {
+    let combined = format!("{stderr}\n{stdout}");
+    let mut facts = Vec::new();
+
+    for line in combined.lines() {
+        let trimmed = line.trim();
+
+        // "Try this: exact Nat.bertrand hn0"
+        if let Some(rest) = trimmed.strip_prefix("Try this:") {
+            facts.push(format!("LEAN SUGGESTS: {}", rest.trim()));
+        }
+        // "[apply] exact ZMod.pow_card_sub_one_eq_one hxi"
+        if trimmed.starts_with("[exact]") || trimmed.starts_with("[apply]") || trimmed.starts_with("[rw]") {
+            if let Some(pos) = trimmed.find(']') {
+                facts.push(format!("LEAN SUGGESTS: {}", trimmed[pos + 1..].trim()));
+            }
+        }
+        // Type signatures from #check: "Nat.bertrand (n : ℕ) (hn0 : n ≠ 0) : ∃ p, ..."
+        if trimmed.contains(" : ") && !trimmed.contains("error") && !trimmed.starts_with('/') {
+            // Heuristic: lines containing " : " that aren't errors are likely type signatures
+            let has_known_pattern = trimmed.contains("→") || trimmed.contains("∀")
+                || trimmed.contains("∃") || trimmed.contains("Prop")
+                || (trimmed.contains("(") && trimmed.contains(":"));
+            if has_known_pattern && trimmed.len() > 10 && trimmed.len() < 500 {
+                facts.push(format!("LEAN REPORTS: {trimmed}"));
+            }
+        }
+    }
+
+    facts.dedup();
+    facts
+}
+
 fn dedup_strings(values: Vec<String>) -> Vec<String> {
     let mut seen = std::collections::BTreeSet::new();
     let mut result = Vec::new();

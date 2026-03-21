@@ -152,11 +152,26 @@ pub fn run_autonomous_step(
         );
         let title = format!("{} repair", latest_session.title);
 
-        // Build enriched repair context
-        let mut repair_context = format!(
+        // Build enriched repair context with grounding from Lean
+        let mut repair_context = String::new();
+
+        // First: extract grounding facts from the Lean output (most important)
+        let grounding = openproof_lean::extract_grounding_from_lean_output(
+            &basis.last_lean_diagnostic,
+            &basis.diagnostics,
+        );
+        if !grounding.is_empty() {
+            repair_context.push_str("CRITICAL -- Lean itself found these. USE THEM:\n");
+            for fact in &grounding {
+                repair_context.push_str(&format!("  {fact}\n"));
+            }
+            repair_context.push('\n');
+        }
+
+        repair_context.push_str(&format!(
             "{description}\n\nLatest diagnostics:\n{}",
             basis.last_lean_diagnostic
-        );
+        ));
 
         // Extract sorry goal states from the failing code
         if !basis.lean_snippet.trim().is_empty() {
