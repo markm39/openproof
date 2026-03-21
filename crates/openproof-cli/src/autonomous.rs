@@ -15,10 +15,42 @@ use crate::turn_handling::{
 };
 use anyhow::Result;
 use openproof_core::{AppEvent, AppState, AutonomousRunPatch};
+use openproof_model::{run_codex_turn, CodexTurnRequest, TurnMessage};
 use openproof_protocol::{AgentRole, AgentStatus, BranchQueueState};
 use openproof_store::AppStore;
 use std::time::Duration;
 use tokio::sync::mpsc;
+
+/// Run a quick "research" model turn to gather relevant Mathlib lemmas and techniques.
+/// Returns the model's response text, to be included in the prover's context.
+async fn research_turn(target: &str, failed_summary: &str) -> Option<String> {
+    let prompt = format!(
+        "I need to prove the following in Lean 4 with Mathlib:\n{target}\n\n\
+         A previous approach failed:\n{failed_summary}\n\n\
+         List the 5 most relevant Mathlib lemma names (fully qualified) for this goal. \
+         For each, give the exact name and type signature. \
+         Also suggest 2-3 alternative proof strategies. \
+         Be concrete -- give actual Mathlib names, not guesses. Use #check if unsure."
+    );
+    let messages = vec![
+        TurnMessage {
+            role: "system".to_string(),
+            content: "You are a Mathlib expert. Return ONLY concrete lemma names and type signatures. No prose.".to_string(),
+        },
+        TurnMessage {
+            role: "user".to_string(),
+            content: prompt,
+        },
+    ];
+    run_codex_turn(CodexTurnRequest {
+        session_id: "research",
+        messages: &messages,
+        model: "gpt-5.4",
+        reasoning_effort: "medium",
+    })
+    .await
+    .ok()
+}
 
 pub fn schedule_autonomous_tick(
     tx: mpsc::UnboundedSender<AppEvent>,
@@ -146,16 +178,99 @@ pub fn run_autonomous_step(
         });
 
     if let Some(basis) = repair_basis {
+        // BACKTRACKING: After 3+ failed repairs, abandon this approach entirely
+        // and try a completely different proof strategy.
+        if basis.attempt_count >= 3 {
+            actions.push(format!(
+                "Backtracking: {} failed repairs on the same approach. Trying a new strategy.",
+                basis.attempt_count
+            ));
+
+            // Clear strategy to force re-planning
+            if let Some(session) = state.current_session_mut() {
+                session.proof.strategy_summary = None;
+                session.proof.phase = "planning".to_string();
+                session.proof.status_line = format!(
+                    "Backtracked after {} failed repairs. Re-planning.",
+                    basis.attempt_count
+                );
+            }
+
+            // Build context for the new prover: what failed, research hints
+            let mut backtrack_context = format!(
+                "The previous proof approach for {} FAILED after {} repair attempts. \
+                 Do NOT continue repairing it. Try a COMPLETELY DIFFERENT proof strategy.\n\n\
+                 Failed approach summary:\n{}\n\nLast error:\n{}\n\n\
+                 RESEARCH TASK: Before writing code, first identify the correct Mathlib lemma names \
+                 by using #check and exact? tactics. List the 3-5 most relevant Mathlib theorems for this goal. \
+                 Then construct a proof using ONLY verified lemma names.\n\n\
+                 Think of an entirely different mathematical approach. \
+                 If the previous approach used Chevalley-Warning, try pigeonhole. \
+                 If it used induction, try a direct construction. \
+                 ALWAYS use exact? or apply? when you are unsure of a lemma name -- \
+                 Lean will search Mathlib for you.",
+                target, basis.attempt_count,
+                basis.summary,
+                basis.last_lean_diagnostic.lines().take(5).collect::<Vec<_>>().join("\n"),
+            );
+
+            // Include Lean grounding facts even in backtrack context
+            let grounding = openproof_lean::extract_grounding_from_lean_output(
+                &basis.last_lean_diagnostic,
+                &basis.diagnostics,
+            );
+            if !grounding.is_empty() {
+                backtrack_context.push_str("\n\nLean DID find these correct facts -- use them even in the new approach:\n");
+                for fact in &grounding {
+                    backtrack_context.push_str(&format!("  {fact}\n"));
+                }
+            }
+
+            // Include failed path history
+            let target_label = latest_session.proof.nodes.first()
+                .map(|n| n.label.as_str())
+                .unwrap_or(&latest_session.title);
+            if let Ok(failed) = store.failed_attempts_for_target(target_label, 5) {
+                if !failed.is_empty() {
+                    backtrack_context.push_str("\n\nAll previously failed approaches (do NOT repeat ANY of these):\n");
+                    for (class, snippet, diag) in &failed {
+                        backtrack_context.push_str(&format!("  [{class}] {snippet}\n    -> {diag}\n"));
+                    }
+                }
+            }
+
+            let title = format!("{} alt-prover", latest_session.title);
+            let (branch_id, session_snapshot) = ensure_hidden_agent_branch(
+                tx.clone(),
+                store.clone(),
+                state,
+                AgentRole::Prover,
+                &title,
+                "Alternative proof strategy after backtracking",
+            )?;
+            start_agent_branch_turn(
+                tx,
+                store,
+                AgentRole::Prover,
+                backtrack_context,
+                branch_id.clone(),
+                branch_id.clone(),
+                session_snapshot,
+            );
+            actions.push(format!("Started alternative prover branch {branch_id}."));
+            return Ok(actions.join("\n"));
+        }
+
+        // Normal repair (< 3 attempts): enrich with grounding + goals + suggestions
         let description = format!(
             "Repair the failing Lean candidate for {} using the latest diagnostics.",
             target
         );
         let title = format!("{} repair", latest_session.title);
 
-        // Build enriched repair context with grounding from Lean
         let mut repair_context = String::new();
 
-        // First: extract grounding facts from the Lean output (most important)
+        // Grounding facts from Lean output
         let grounding = openproof_lean::extract_grounding_from_lean_output(
             &basis.last_lean_diagnostic,
             &basis.diagnostics,
@@ -173,7 +288,7 @@ pub fn run_autonomous_step(
             basis.last_lean_diagnostic
         ));
 
-        // Extract sorry goal states from the failing code
+        // Extract sorry goal states
         if !basis.lean_snippet.trim().is_empty() {
             let project_dir = crate::helpers::resolve_lean_project_dir();
             let rendered = openproof_lean::render_node_scratch(
@@ -189,7 +304,6 @@ pub fn run_autonomous_step(
                 }
             }
 
-            // After 2+ repair attempts, try lean_suggest for exact?/apply?
             if basis.attempt_count >= 2 {
                 if let Ok(suggestions) = openproof_lean::run_tactic_suggestions(
                     &project_dir, &rendered, "exact?",
@@ -204,7 +318,7 @@ pub fn run_autonomous_step(
             }
         }
 
-        // Include failed path history
+        // Failed path history
         let target_label = latest_session.proof.nodes.first()
             .map(|n| n.label.as_str())
             .unwrap_or(&latest_session.title);
