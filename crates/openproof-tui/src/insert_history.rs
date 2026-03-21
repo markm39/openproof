@@ -1,7 +1,8 @@
 //! Push completed conversation turns into terminal scrollback above the viewport.
 //!
-//! Uses DECSTBM (Set Top and Bottom Margins) scroll regions to insert lines
-//! above the ratatui viewport without disturbing it.
+//! Writes lines directly to the terminal's scrollback by printing them above
+//! the viewport area. Uses newlines to scroll content upward into the terminal's
+//! scrollback buffer.
 
 use std::fmt;
 use std::io;
@@ -10,7 +11,7 @@ use std::io::Write;
 use crossterm::cursor::MoveTo;
 use crossterm::queue;
 use crossterm::style::{Colors, Print, SetAttribute, SetColors};
-use crossterm::terminal::{Clear, ClearType};
+use crossterm::terminal::{Clear, ClearType, ScrollUp};
 use crossterm::Command;
 use ratatui::backend::Backend;
 use ratatui::layout::Size;
@@ -18,11 +19,12 @@ use ratatui::text::Line;
 
 use crate::custom_terminal::CustomTerminal;
 
-/// Insert styled lines above the viewport into terminal scrollback.
+/// Insert styled lines into terminal scrollback above the viewport.
 ///
-/// The viewport is pushed down to make room. If the viewport is already at the
-/// bottom of the screen, old content above it scrolls into terminal scrollback
-/// (which the terminal's native scrollbar handles).
+/// Strategy: scroll the entire screen up by N rows (pushing top rows into
+/// terminal scrollback), then write the new content in the space created
+/// above the viewport. The viewport position doesn't change relative to the
+/// bottom of the screen.
 pub fn insert_history_lines<B>(
     terminal: &mut CustomTerminal<B>,
     lines: Vec<Line>,
@@ -39,7 +41,7 @@ where
         return Ok(());
     }
 
-    let mut area = terminal.viewport_area;
+    let area = terminal.viewport_area;
     let wrap_width = area.width.max(1) as usize;
 
     // Count how many visual rows the content will take.
@@ -53,74 +55,66 @@ where
         return Ok(());
     }
 
-    let last_cursor_pos = terminal.last_known_cursor_pos;
-
-    // We need to make room above the viewport for the content.
-    // If viewport doesn't fill the screen, we can push it down.
-    // If viewport is at the bottom, content above scrolls into terminal scrollback.
-
-    // First: ensure viewport doesn't start at row 0 with no room.
-    // We shrink the viewport from the top and push it down.
-    let available_above = area.top();
-    let need_above = content_rows;
-
-    if available_above < need_above {
-        // Need to push viewport down to make room.
-        let push_by = need_above - available_above;
-        let push_by = push_by.min(area.height.saturating_sub(3)); // keep at least 3 rows for viewport
-
-        if push_by > 0 {
-            // Scroll the viewport region down by push_by rows.
-            // This creates empty rows above the viewport.
-            let writer = terminal.backend_mut();
-            // Set scroll region to entire screen.
-            queue!(writer, SetScrollRegion(1..screen_size.height))?;
-            // Position cursor at top of viewport.
-            queue!(writer, MoveTo(0, area.top()))?;
-            // Reverse Index push_by times (pushes content down, creating space at top).
-            for _ in 0..push_by {
-                queue!(writer, Print("\x1bM"))?;
-            }
-            queue!(writer, ResetScrollRegion)?;
-            io::Write::flush(writer)?;
-
-            area.y += push_by;
-            area.height -= push_by;
-            terminal.set_viewport_area(area);
-        }
-    }
-
-    // Now we have space above the viewport. Insert lines there.
-    if area.top() == 0 {
-        // Still no room -- just skip. This shouldn't happen with push_by > 0.
-        return Ok(());
-    }
-
     let writer = terminal.backend_mut();
 
-    // Set scroll region to the area above the viewport.
-    queue!(writer, SetScrollRegion(1..area.top()))?;
-    // Position cursor at bottom of the history region.
-    queue!(writer, MoveTo(0, area.top().saturating_sub(1)))?;
+    // Scroll the entire screen up by content_rows. This:
+    // 1. Pushes the top content_rows lines into terminal scrollback
+    // 2. Creates content_rows blank lines at the bottom
+    // 3. The viewport content shifts up, creating space at the bottom
+    //
+    // But we actually want space at the TOP (above viewport). So instead:
+    // Use a scroll region from line 1 to viewport_top to insert content there.
+    // If viewport is at row 0, we need to first scroll everything to make room.
 
-    for line in &lines {
-        queue!(writer, Print("\r\n"))?;
-        queue!(writer, Clear(ClearType::UntilNewLine))?;
-        write_line_spans(writer, line)?;
+    if area.top() == 0 {
+        // Viewport fills from top -- scroll entire screen up to make room,
+        // then move viewport down.
+        queue!(writer, ScrollUp(content_rows))?;
+        io::Write::flush(writer)?;
+
+        // Viewport is now content_rows higher than where it should be.
+        // Move it down by setting the viewport area.
+        let new_y = 0; // content is now in scrollback, viewport stays at 0
+        let _ = new_y;
+        // Actually, after ScrollUp, the viewport content has moved up by
+        // content_rows. We need to write our history lines at the top of
+        // the screen (rows 0..content_rows), then the viewport draws below.
+
+        // Position cursor at top-left.
+        queue!(writer, MoveTo(0, 0))?;
+
+        // Write each history line.
+        for (i, line) in lines.iter().enumerate() {
+            if i > 0 {
+                queue!(writer, Print("\r\n"))?;
+            }
+            queue!(writer, Clear(ClearType::UntilNewLine))?;
+            write_line_spans(writer, line)?;
+        }
+
+        // Reset styles.
+        queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;
+        io::Write::flush(writer)?;
+
+        // Force full redraw of the viewport.
+        terminal.clear()?;
+    } else {
+        // There's already space above the viewport. Use scroll region.
+        queue!(writer, SetScrollRegion(1..area.top()))?;
+        queue!(writer, MoveTo(0, area.top().saturating_sub(1)))?;
+
+        for line in &lines {
+            queue!(writer, Print("\r\n"))?;
+            queue!(writer, Clear(ClearType::UntilNewLine))?;
+            write_line_spans(writer, line)?;
+        }
+
+        queue!(writer, ResetScrollRegion)?;
+        queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;
+        io::Write::flush(writer)?;
+
+        terminal.clear()?;
     }
-
-    queue!(writer, ResetScrollRegion)?;
-
-    // Restore cursor.
-    queue!(writer, MoveTo(last_cursor_pos.x, last_cursor_pos.y))?;
-    queue!(
-        writer,
-        SetAttribute(crossterm::style::Attribute::Reset)
-    )?;
-    io::Write::flush(writer)?;
-
-    // Force full redraw of the viewport since we've changed the scroll region.
-    terminal.clear()?;
 
     Ok(())
 }
@@ -128,7 +122,6 @@ where
 fn write_line_spans(writer: &mut impl Write, line: &Line) -> io::Result<()> {
     use crossterm::style::Color as CColor;
 
-    // Reset at line start.
     queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;
 
     for span in &line.spans {
@@ -136,31 +129,17 @@ fn write_line_spans(writer: &mut impl Write, line: &Line) -> io::Result<()> {
         let bg = span.style.bg.map(Into::into).unwrap_or(CColor::Reset);
         queue!(writer, SetColors(Colors::new(fg, bg)))?;
 
-        if span
-            .style
-            .add_modifier
-            .contains(ratatui::style::Modifier::BOLD)
-        {
+        if span.style.add_modifier.contains(ratatui::style::Modifier::BOLD) {
             queue!(writer, SetAttribute(crossterm::style::Attribute::Bold))?;
         }
-        if span
-            .style
-            .add_modifier
-            .contains(ratatui::style::Modifier::DIM)
-        {
+        if span.style.add_modifier.contains(ratatui::style::Modifier::DIM) {
             queue!(writer, SetAttribute(crossterm::style::Attribute::Dim))?;
         }
-        if span
-            .style
-            .add_modifier
-            .contains(ratatui::style::Modifier::ITALIC)
-        {
+        if span.style.add_modifier.contains(ratatui::style::Modifier::ITALIC) {
             queue!(writer, SetAttribute(crossterm::style::Attribute::Italic))?;
         }
 
         queue!(writer, Print(span.content.as_ref()))?;
-
-        // Reset after each span to prevent style leaking.
         queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;
     }
     Ok(())
