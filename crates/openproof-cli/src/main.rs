@@ -637,6 +637,7 @@ async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
         let _ = disable_raw_mode();
         let _ = crossterm::execute!(
             io::stderr(),
+            crossterm::event::DisableMouseCapture,
             LeaveAlternateScreen,
             crossterm::cursor::Show,
         );
@@ -650,12 +651,17 @@ async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
         stdout,
         crossterm::style::Print("\x1b[r\x1b[0m\x1b[H\x1b[2J\x1b[3J\x1b[H"),
         EnterAlternateScreen,
+        crossterm::event::EnableMouseCapture,
     )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
     let app_result = run_app(&mut terminal, store, &mut state, tx, &mut rx).await;
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    crossterm::execute!(
+        terminal.backend_mut(),
+        crossterm::event::DisableMouseCapture,
+        LeaveAlternateScreen,
+    )?;
     terminal.show_cursor()?;
     let _ = std::panic::take_hook();
     app_result
@@ -852,8 +858,8 @@ async fn run_app(
                                 FocusPane::Sessions => AppEvent::SelectNextSession,
                                 _ => AppEvent::ScrollTranscriptDown,
                             }),
-                            KeyCode::PageUp => Some(AppEvent::ScrollTranscriptUp),
-                            KeyCode::PageDown => Some(AppEvent::ScrollTranscriptDown),
+                            KeyCode::PageUp => Some(AppEvent::ScrollPageUp),
+                            KeyCode::PageDown => Some(AppEvent::ScrollPageDown),
                             // Cursor movement
                             KeyCode::Left => Some(AppEvent::CursorLeft),
                             KeyCode::Right => Some(AppEvent::CursorRight),
@@ -938,6 +944,22 @@ async fn run_app(
                 Event::Paste(text) => {
                     if let Some(write) = state.apply(AppEvent::Paste(text)) {
                         persist_write(tx.clone(), store.clone(), write);
+                    }
+                }
+                Event::Mouse(mouse) => {
+                    use crossterm::event::MouseEventKind;
+                    let scroll_event = match mouse.kind {
+                        MouseEventKind::ScrollUp => Some(AppEvent::ScrollTranscriptUp),
+                        MouseEventKind::ScrollDown => Some(AppEvent::ScrollTranscriptDown),
+                        _ => None,
+                    };
+                    // Fire 3 times for a faster scroll feel.
+                    if let Some(evt) = scroll_event {
+                        for _ in 0..3 {
+                            if let Some(write) = state.apply(evt.clone()) {
+                                persist_write(tx.clone(), store.clone(), write);
+                            }
+                        }
                     }
                 }
                 _ => {}

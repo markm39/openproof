@@ -86,6 +86,10 @@ pub enum AppEvent {
     SelectNextSession,
     ScrollTranscriptUp,
     ScrollTranscriptDown,
+    ScrollPageUp,
+    ScrollPageDown,
+    ScrollToTop,
+    ScrollToBottom,
     AuthLoaded(AuthSummary),
     LeanLoaded(LeanHealth),
     SyncCompleted,
@@ -2025,6 +2029,20 @@ impl AppState {
             }
             AppEvent::ScrollTranscriptDown => {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            }
+            AppEvent::ScrollPageUp => {
+                let max = self.total_visual_lines.saturating_sub(self.visible_height);
+                self.scroll_offset = (self.scroll_offset + 20).min(max);
+            }
+            AppEvent::ScrollPageDown => {
+                self.scroll_offset = self.scroll_offset.saturating_sub(20);
+            }
+            AppEvent::ScrollToTop => {
+                let max = self.total_visual_lines.saturating_sub(self.visible_height);
+                self.scroll_offset = max;
+            }
+            AppEvent::ScrollToBottom => {
+                self.scroll_offset = 0;
             }
             AppEvent::AuthLoaded(auth) => {
                 self.auth = auth;
