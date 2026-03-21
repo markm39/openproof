@@ -104,7 +104,8 @@ pub fn verify_node_at(
 }
 
 pub fn render_node_scratch(session: &SessionSnapshot, node: &ProofNode) -> String {
-    let content = node.content.trim();
+    let content = clean_lean_content(node.content.trim());
+    let content = content.trim();
 
     // If the content already has import statements, it's a self-contained Lean file.
     // Use it as-is to avoid duplicate imports.
@@ -404,6 +405,30 @@ pub fn extract_grounding_from_lean_output(stderr: &str, stdout: &str) -> Vec<Str
 
     facts.dedup();
     facts
+}
+
+/// Strip openproof structured markers that may have leaked into Lean code.
+/// These are text markers like "LEMMA: label :: statement" that the model
+/// sometimes includes in its lean code blocks.
+fn clean_lean_content(content: &str) -> String {
+    content
+        .lines()
+        .filter(|line| {
+            let trimmed = line.trim();
+            // Filter out marker lines that aren't valid Lean
+            !trimmed.starts_with("LEMMA:")
+                && !trimmed.starts_with("THEOREM:")
+                && !trimmed.starts_with("TITLE:")
+                && !trimmed.starts_with("PROBLEM:")
+                && !trimmed.starts_with("STATUS:")
+                && !trimmed.starts_with("PHASE:")
+                && !trimmed.starts_with("NEXT:")
+                && !trimmed.starts_with("PAPER:")
+                && !trimmed.starts_with("FORMAL_TARGET:")
+                && !trimmed.starts_with("ACCEPTED_TARGET:")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn dedup_strings(values: Vec<String>) -> Vec<String> {
