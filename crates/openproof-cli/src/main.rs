@@ -322,7 +322,7 @@ async fn run_autonomous(launch_cwd: PathBuf, problem: String, label: Option<Stri
     // Submit problem as user message
     eprintln!("[run] Problem: {problem}");
     let submitted = state.submit_text(problem.clone());
-    if let Some(input) = submitted {
+    if let Some(_input) = submitted {
         if let Some(session) = state.current_session().cloned() {
             let s = store.clone();
             let _ = tokio::task::spawn_blocking(move || s.save_session(&session)).await;
