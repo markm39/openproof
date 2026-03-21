@@ -85,27 +85,37 @@ impl AppState {
                     &parsed_decls,
                     &session.id,
                 );
-                // Merge: update existing nodes by name, add new ones
-                for pn in &parsed_nodes {
-                    if let Some(existing) = session.proof.nodes.iter_mut().find(|n| n.label == pn.label) {
-                        existing.content = pn.content.clone();
-                        existing.statement = pn.statement.clone();
-                        existing.kind = pn.kind;
-                        existing.parent_id = pn.parent_id.clone();
-                        existing.depth = pn.depth;
-                        existing.updated_at = now.clone();
-                    } else {
-                        let mut new_node = pn.clone();
-                        new_node.status = ProofNodeStatus::Pending;
-                        new_node.updated_at = now.clone();
-                        session.proof.nodes.push(new_node);
+                // Replace all nodes with the Lean-parsed tree (authoritative source)
+                // Keep the status of existing nodes (verified/failed/pending)
+                let old_statuses: std::collections::HashMap<String, ProofNodeStatus> = session
+                    .proof.nodes.iter()
+                    .map(|n| (n.label.clone(), n.status))
+                    .collect();
+                let active_label = session.proof.active_node_id.as_deref()
+                    .and_then(|id| session.proof.nodes.iter().find(|n| n.id == id))
+                    .map(|n| n.label.clone());
+
+                session.proof.nodes = parsed_nodes.iter().map(|pn| {
+                    let mut node = pn.clone();
+                    // Preserve verification status from previous run
+                    if let Some(&prev_status) = old_statuses.get(&node.label) {
+                        if prev_status != ProofNodeStatus::Pending {
+                            node.status = prev_status;
+                        }
                     }
+                    node.updated_at = now.clone();
+                    node
+                }).collect();
+
+                // Restore active node by label
+                if let Some(label) = &active_label {
+                    session.proof.active_node_id = session.proof.nodes.iter()
+                        .find(|n| &n.label == label)
+                        .map(|n| n.id.clone());
                 }
-                // Set root node if not set
-                if session.proof.root_node_id.is_none() {
-                    if let Some(root) = parsed_nodes.first() {
-                        session.proof.root_node_id = Some(root.id.clone());
-                    }
+                // Set root node
+                if let Some(root) = session.proof.nodes.first() {
+                    session.proof.root_node_id = Some(root.id.clone());
                 }
             }
 
