@@ -206,6 +206,17 @@ impl AppState {
                 {
                     branch.lean_snippet = snippet.clone();
                     branch.search_status = "candidate updated".to_string();
+
+                    // Visible notice: agent found a lean candidate
+                    let snippet_lines = snippet.lines().count();
+                    let role_label = agent_role_label(branch.role);
+                    session.transcript.push(TranscriptEntry {
+                        id: next_id("native_msg"),
+                        role: MessageRole::Notice,
+                        title: Some("Lean".to_string()),
+                        content: format!("{role_label} produced Lean candidate ({snippet_lines} lines). Verifying..."),
+                        created_at: now.clone(),
+                    });
                     branch.progress_kind = Some(
                         if branch.role == openproof_protocol::AgentRole::Repairer {
                             "repairing".to_string()
