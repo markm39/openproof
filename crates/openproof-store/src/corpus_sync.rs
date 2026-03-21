@@ -328,6 +328,7 @@ impl AppStore {
                 kind: String::new(),
                 source_session_id: None,
                 source_node_id: None,
+                goal_types: Vec::new(),
             })
         })?;
         for row in rows {
@@ -372,5 +373,116 @@ impl AppStore {
             results.push(row?);
         }
         Ok(results)
+    }
+
+    // --- Knowledge graph operations ---
+
+    /// Add a dependency edge between two corpus items.
+    pub fn add_corpus_edge(
+        &self,
+        from_key: &str,
+        to_key: &str,
+        edge_type: &str,
+        confidence: f64,
+    ) -> Result<()> {
+        let conn = self.connect()?;
+        let now = chrono::Utc::now().to_rfc3339();
+        let id = format!("edge_{}", crate::corpus::next_store_id("edge"));
+        conn.execute(
+            "INSERT OR IGNORE INTO corpus_edges (id, from_item_key, to_item_key, edge_type, confidence, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            rusqlite::params![id, from_key, to_key, edge_type, confidence, now],
+        )?;
+        Ok(())
+    }
+
+    /// Tag a corpus item with a domain tag.
+    pub fn tag_corpus_item(&self, item_key: &str, tag: &str) -> Result<()> {
+        let conn = self.connect()?;
+        conn.execute(
+            "INSERT OR IGNORE INTO corpus_tags (item_key, tag) VALUES (?, ?)",
+            rusqlite::params![item_key, tag],
+        )?;
+        Ok(())
+    }
+
+    /// Record that a proof used a specific corpus item as a premise.
+    pub fn record_provenance(
+        &self,
+        proof_key: &str,
+        used_key: &str,
+        context: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.connect()?;
+        let now = chrono::Utc::now().to_rfc3339();
+        conn.execute(
+            "INSERT OR IGNORE INTO proof_provenance (proof_item_key, used_item_key, context, created_at) VALUES (?, ?, ?, ?)",
+            rusqlite::params![proof_key, used_key, context, now],
+        )?;
+        Ok(())
+    }
+
+    /// Get items connected to a given item in the knowledge graph.
+    pub fn get_related_items(
+        &self,
+        item_key: &str,
+        limit: usize,
+    ) -> Result<Vec<(String, String, f64)>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT to_item_key, edge_type, confidence
+            FROM corpus_edges
+            WHERE from_item_key = ?
+            ORDER BY confidence DESC
+            LIMIT ?
+            "#,
+        )?;
+        let rows = stmt.query_map(rusqlite::params![item_key, limit as i64], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Get items by domain tag.
+    pub fn items_by_tag(&self, tag: &str, limit: usize) -> Result<Vec<String>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            "SELECT item_key FROM corpus_tags WHERE tag = ? LIMIT ?",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![tag, limit as i64], |row| row.get(0))?;
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+        Ok(results)
+    }
+
+    /// Auto-extract domain tags from a module name.
+    pub fn auto_tag_from_module(&self, item_key: &str, module_name: &str) -> Result<()> {
+        let lower = module_name.to_lowercase();
+        let tags: Vec<&str> = [
+            ("algebra", &["algebra", "group", "ring", "field", "module", "linear"][..]),
+            ("topology", &["topology", "topological", "metric", "continuous"]),
+            ("analysis", &["analysis", "measure", "integral", "derivative", "limit"]),
+            ("number_theory", &["number", "prime", "divisib", "factorial", "modular", "zmod"]),
+            ("combinatorics", &["combinat", "finset", "card", "pigeonhole", "ramsey"]),
+            ("geometry", &["geometry", "euclid", "triangle", "circle", "angle"]),
+            ("logic", &["logic", "propositional", "decidab", "classical"]),
+            ("order", &["order", "lattice", "partial", "total"]),
+            ("category", &["category", "functor", "natural", "monad"]),
+        ]
+        .iter()
+        .filter(|(_, keywords)| keywords.iter().any(|k| lower.contains(k)))
+        .map(|(tag, _)| *tag)
+        .collect();
+
+        for tag in tags {
+            self.tag_corpus_item(item_key, tag)?;
+        }
+        Ok(())
     }
 }

@@ -211,6 +211,35 @@ pub(crate) fn open_connection(db_path: &Path) -> Result<Connection> {
             last_seen_at TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_remote_corpus_cache_key ON remote_corpus_cache(cache_key, last_seen_at DESC);
+
+        -- Knowledge graph: edges between corpus items
+        CREATE TABLE IF NOT EXISTS corpus_edges (
+            id TEXT PRIMARY KEY,
+            from_item_key TEXT NOT NULL,
+            to_item_key TEXT NOT NULL,
+            edge_type TEXT NOT NULL,
+            confidence REAL NOT NULL DEFAULT 1.0,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_corpus_edges_from ON corpus_edges(from_item_key);
+        CREATE INDEX IF NOT EXISTS idx_corpus_edges_to ON corpus_edges(to_item_key);
+
+        -- Domain tags for corpus items
+        CREATE TABLE IF NOT EXISTS corpus_tags (
+            item_key TEXT NOT NULL,
+            tag TEXT NOT NULL,
+            PRIMARY KEY (item_key, tag)
+        );
+        CREATE INDEX IF NOT EXISTS idx_corpus_tags_tag ON corpus_tags(tag);
+
+        -- Proof provenance: which items helped prove what
+        CREATE TABLE IF NOT EXISTS proof_provenance (
+            proof_item_key TEXT NOT NULL,
+            used_item_key TEXT NOT NULL,
+            context TEXT,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (proof_item_key, used_item_key)
+        );
         "#,
     )?;
     Ok(conn)

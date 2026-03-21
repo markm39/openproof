@@ -322,6 +322,18 @@ pub fn parse_statement_args(arg_text: &str) -> Option<(String, String)> {
     }
 }
 
+/// Auto-tag a verified corpus item by domain and record graph metadata.
+pub fn index_verified_item(store: AppStore, identity_key: String, module_name: String) {
+    tokio::spawn(async move {
+        let store_ref = store.clone();
+        let ik = identity_key.clone();
+        let mn = module_name.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+            store_ref.auto_tag_from_module(&ik, &mn)
+        }).await;
+    });
+}
+
 /// Embed a verified corpus item into the vector store (fire-and-forget).
 /// Runs in background -- does not block the caller. Silently skips if
 /// Qdrant is unavailable or OPENAI_API_KEY is not set.

@@ -343,6 +343,21 @@ pub fn run_autonomous_step(
                     for (line, goal) in &goals {
                         repair_context.push_str(&format!("  Line {line}: {goal}\n"));
                     }
+
+                    // Premise retrieval: search corpus for lemmas matching goal types
+                    // This is done synchronously via FTS for now; vector search is async
+                    let goal_query = goals.iter()
+                        .map(|(_, g)| g.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    if let Ok(premises) = store.search_verified_corpus(&goal_query, 5) {
+                        if !premises.is_empty() {
+                            repair_context.push_str("\n\nRelevant verified premises from corpus:\n");
+                            for (label, statement, _vis) in &premises {
+                                repair_context.push_str(&format!("  {label} :: {statement}\n"));
+                            }
+                        }
+                    }
                 }
             }
 

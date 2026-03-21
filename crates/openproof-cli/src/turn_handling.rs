@@ -193,6 +193,7 @@ pub fn start_branch_verification(
         match result {
             Some(result) => {
                 let persist_store = store.clone();
+                let index_store = store.clone();
                 let persist_session = verification_session.clone();
                 let persist_result = result.clone();
                 let persist_tx = tx.clone();
@@ -213,18 +214,24 @@ pub fn start_branch_verification(
                                 .to_string(),
                         });
                     }
-                    // Embed verified items into vector store (fire-and-forget)
+                    // Embed + index verified items (fire-and-forget)
                     if embed_ok {
                         if let Some(node) = embed_session.proof.active_node_id.as_deref()
                             .and_then(|id| embed_session.proof.nodes.iter().find(|n| n.id == id))
                         {
+                            let ik = format!("session/{}/{}", embed_session.id, node.id);
                             crate::helpers::embed_verified_item(
-                                format!("session/{}/{}", embed_session.id, node.id),
+                                ik.clone(),
                                 node.label.clone(),
                                 node.statement.clone(),
                                 format!("{:?}", node.kind).to_lowercase(),
                                 String::new(),
                                 node.content.clone(),
+                            );
+                            crate::helpers::index_verified_item(
+                                index_store.clone(),
+                                ik,
+                                String::new(), // module name not easily available here
                             );
                         }
                     }

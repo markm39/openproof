@@ -561,6 +561,8 @@ pub struct CloudCorpusSearchHit {
     pub updated_at: String,
     pub artifact_content: String,
     pub score: f64,
+    /// Goal types extracted from Lean (conclusion types of theorems/lemmas).
+    pub goal_types: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -222,6 +222,19 @@ pub async fn generate_embedding(text: &str) -> Option<Vec<f32>> {
     body.data.first().map(|d| d.embedding.clone())
 }
 
+/// Search for premises relevant to a given goal type.
+/// Combines semantic search (embedding similarity) with the goal type text.
+pub async fn search_premises_for_goal(
+    store: &EmbeddingStore,
+    goal_type: &str,
+) -> Result<Vec<SemanticHit>> {
+    let embedding = match generate_embedding(goal_type).await {
+        Some(e) => e,
+        None => return Ok(Vec::new()),
+    };
+    store.search(embedding, 10).await
+}
+
 /// Build the text to embed for a corpus item.
 /// Combines the statement, label, and key metadata into a searchable string.
 pub fn build_embedding_text(
