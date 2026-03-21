@@ -279,7 +279,13 @@ fn generate_tex(session: &SessionSnapshot) -> String {
         doc.push_str("\\author{OpenProof}\n");
         doc.push_str("\\date{\\today}\n\n");
         doc.push_str("\\begin{document}\n\\maketitle\n\n");
-        doc.push_str(&proof.paper_tex);
+        // Strip [language=Lean] etc. -- listings doesn't know Lean.
+        let sanitized = proof.paper_tex
+            .replace("[language=Lean]", "")
+            .replace("[language=lean]", "")
+            .replace("[language=lean4]", "")
+            .replace("[language=Lean4]", "");
+        doc.push_str(&sanitized);
         doc.push_str("\n\n\\end{document}\n");
         return doc;
     }
