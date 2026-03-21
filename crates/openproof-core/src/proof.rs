@@ -27,6 +27,16 @@ impl AppState {
             let Some(session) = self.current_session_mut() else {
                 return Err("No active session.".to_string());
             };
+            // If adding a sub-lemma, set parent to the current active node
+            let parent = session.proof.active_node_id.clone();
+            let depth = if kind == ProofNodeKind::Lemma {
+                parent.as_deref()
+                    .and_then(|pid| session.proof.nodes.iter().find(|n| n.id == pid))
+                    .map(|p| p.depth + 1)
+                    .unwrap_or(0)
+            } else {
+                0
+            };
             let node = ProofNode {
                 id: next_id("node"),
                 kind,
@@ -34,6 +44,9 @@ impl AppState {
                 statement: statement.to_string(),
                 content: String::new(),
                 status: ProofNodeStatus::Pending,
+                parent_id: if depth > 0 { parent } else { None },
+                depends_on: Vec::new(),
+                depth,
                 created_at: timestamp.clone(),
                 updated_at: timestamp.clone(),
             };

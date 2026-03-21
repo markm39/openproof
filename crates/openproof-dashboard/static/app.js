@@ -205,38 +205,54 @@ function GraphTab({ session }) {
     return "#6b7280";
   };
 
-  // Layout: nodes at top, branches below each node
+  // Layout: tree structure based on parent_id / depth
   const nodeW = 160;
   const nodeH = 50;
   const branchW = 140;
   const branchH = 36;
   const gapX = 20;
-  const gapY = 16;
+  const gapY = 30;
   const startX = 30;
   const startY = 30;
 
-  // Position nodes in a row
-  const posNodes = nodes.map((n, i) => ({
-    ...n,
-    x: startX + i * (nodeW + gapX),
-    y: startY,
-  }));
+  // Group nodes by depth for tree layout
+  const maxDepth = Math.max(0, ...nodes.map((n) => n.depth || 0));
+  const byDepth = {};
+  for (const n of nodes) {
+    const d = n.depth || 0;
+    if (!byDepth[d]) byDepth[d] = [];
+    byDepth[d].push(n);
+  }
 
-  // Position branches below nodes, grouped by focusNodeId or the first node
+  // Position nodes: each depth level is a row
+  const posNodes = nodes.map((n) => {
+    const d = n.depth || 0;
+    const siblings = byDepth[d] || [];
+    const idx = siblings.indexOf(n);
+    return {
+      ...n,
+      x: startX + idx * (nodeW + gapX),
+      y: startY + d * (nodeH + gapY),
+    };
+  });
+
+  // Position branches below the proof tree, grouped by focusNodeId
+  const treeBottom = startY + (maxDepth + 1) * (nodeH + gapY);
   const posBranches = branches.map((b, i) => {
     const parentNode = posNodes.find((n) =>
       (b.focus_node_id || b.focusNodeId) === n.id
     ) || posNodes[0];
     const parentX = parentNode ? parentNode.x : startX;
+    const parentY = parentNode ? parentNode.y + nodeH : treeBottom;
     const col = branches.filter((bb, j) =>
       j < i && ((bb.focus_node_id || bb.focusNodeId || "") === (b.focus_node_id || b.focusNodeId || ""))
     ).length;
     return {
       ...b,
       x: parentX + col * (branchW + 10),
-      y: startY + nodeH + gapY + 20,
+      y: treeBottom + 10,
       parentX: parentX + nodeW / 2,
-      parentY: startY + nodeH,
+      parentY,
     };
   });
 
@@ -263,12 +279,30 @@ function GraphTab({ session }) {
         ${scratchPath ? h`<span>\u00a0\u00b7\u00a0 <code style=${{fontSize:"10px"}}>${scratchPath}</code></span>` : null}
       </div>
       <svg width=${width} height=${height} xmlns="http://www.w3.org/2000/svg">
-        <!-- Edges from nodes to branches -->
+        <!-- Parent-child edges in proof tree -->
+        ${posNodes.filter((n) => n.parent_id || n.parentId).map((n) => {
+          const parent = posNodes.find((p) => p.id === (n.parent_id || n.parentId));
+          if (!parent) return null;
+          return h`<line key=${"tree-" + n.id}
+            x1=${parent.x + nodeW / 2} y1=${parent.y + nodeH}
+            x2=${n.x + nodeW / 2} y2=${n.y}
+            stroke="#3b82f6" strokeWidth="2" />`;
+        })}
+        <!-- Dependency edges (dashed) -->
+        ${posNodes.flatMap((n) => (n.depends_on || n.dependsOn || []).map((depId) => {
+          const dep = posNodes.find((p) => p.id === depId);
+          if (!dep) return null;
+          return h`<line key=${"dep-" + n.id + "-" + depId}
+            x1=${dep.x + nodeW / 2} y1=${dep.y + nodeH}
+            x2=${n.x + nodeW / 2} y2=${n.y}
+            stroke="#6b7280" strokeWidth="1" strokeDasharray="4,3" />`;
+        }))}
+        <!-- Edges from nodes to agent branches -->
         ${posBranches.map((b, i) => h`
           <line key=${"edge" + i}
             x1=${b.parentX} y1=${b.parentY}
             x2=${b.x + branchW / 2} y2=${b.y}
-            stroke=${roleColor(b.role)} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.5" />
+            stroke=${roleColor(b.role)} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.4" />
         `)}
 
         <!-- Proof nodes (top row) -->

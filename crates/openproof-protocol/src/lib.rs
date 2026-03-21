@@ -107,6 +107,12 @@ pub struct ProofNode {
     pub statement: String,
     pub content: String,
     pub status: ProofNodeStatus,
+    /// Parent node ID -- forms the proof tree. Root nodes have None.
+    pub parent_id: Option<String>,
+    /// IDs of nodes this node depends on (uses in its proof).
+    pub depends_on: Vec<String>,
+    /// Depth in the proof tree (0 = root theorem).
+    pub depth: usize,
     pub created_at: String,
     pub updated_at: String,
 }

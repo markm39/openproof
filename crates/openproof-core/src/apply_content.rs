@@ -73,6 +73,12 @@ impl AppState {
                 session.proof.awaiting_clarification = true;
             }
             for created in &parsed.created_nodes {
+                // Sub-lemmas are children of the current active node
+                let parent = session.proof.active_node_id.clone();
+                let depth = parent.as_deref()
+                    .and_then(|pid| session.proof.nodes.iter().find(|n| n.id == pid))
+                    .map(|p| p.depth + 1)
+                    .unwrap_or(0);
                 let node = openproof_protocol::ProofNode {
                     id: next_id("node"),
                     kind: created.kind,
@@ -80,6 +86,9 @@ impl AppState {
                     statement: created.statement.clone(),
                     content: String::new(),
                     status: ProofNodeStatus::Pending,
+                    parent_id: if depth > 0 { parent.clone() } else { None },
+                    depends_on: Vec::new(),
+                    depth,
                     created_at: session.updated_at.clone(),
                     updated_at: session.updated_at.clone(),
                 };
@@ -110,6 +119,9 @@ impl AppState {
                         statement: target,
                         content: String::new(),
                         status: ProofNodeStatus::Pending,
+                        parent_id: None,
+                        depends_on: Vec::new(),
+                        depth: 0,
                         created_at: session.updated_at.clone(),
                         updated_at: session.updated_at.clone(),
                     };

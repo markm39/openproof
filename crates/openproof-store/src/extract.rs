@@ -348,6 +348,21 @@ fn extract_proof_nodes(value: &Value) -> Vec<ProofNode> {
                     .and_then(Value::as_str)
                     .map(str::to_string)
                     .unwrap_or_else(|| Utc::now().to_rfc3339()),
+                parent_id: node
+                    .get("parentId")
+                    .or_else(|| node.get("parent_id"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                depends_on: node
+                    .get("dependsOn")
+                    .or_else(|| node.get("depends_on"))
+                    .and_then(Value::as_array)
+                    .map(|arr| arr.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                    .unwrap_or_default(),
+                depth: node
+                    .get("depth")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize,
                 updated_at: node
                     .get("updatedAt")
                     .and_then(Value::as_str)
