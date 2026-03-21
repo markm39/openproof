@@ -180,60 +180,154 @@ function OverviewTab({ session }) {
 function GraphTab({ session }) {
   const proof = session?.proof;
   const nodes = proof?.nodes || [];
+  const branches = proof?.branches || [];
+  const agents = proof?.agents || [];
 
-  if (nodes.length === 0) {
+  if (nodes.length === 0 && branches.length === 0) {
     return h`<div className="graph-container">No proof nodes to visualize</div>`;
   }
 
-  // Simple SVG tree layout
-  const width = Math.max(600, nodes.length * 160);
-  const height = 400;
-  const nodeW = 120;
-  const nodeH = 40;
-  const gapX = 160;
-  const startX = 40;
-  const startY = 40;
-
-  const positioned = nodes.map((n, i) => ({
-    ...n,
-    x: startX + i * gapX,
-    y: startY + (n.kind === "theorem" ? 0 : n.kind === "lemma" ? 100 : 200),
-  }));
-
   const statusColor = (s) => {
-    if (s === "verified") return "#22c55e";
-    if (s === "proving") return "#eab308";
-    if (s === "failed") return "#ef4444";
+    const st = String(s || "").toLowerCase();
+    if (st === "verified" || st === "done") return "#22c55e";
+    if (st === "proving" || st === "running") return "#eab308";
+    if (st === "failed" || st === "error" || st === "blocked") return "#ef4444";
     return "#525252";
   };
 
+  const roleColor = (r) => {
+    const role = String(r || "").toLowerCase();
+    if (role === "prover") return "#3b82f6";
+    if (role === "repairer") return "#f59e0b";
+    if (role === "planner") return "#8b5cf6";
+    if (role === "retriever") return "#06b6d4";
+    if (role === "critic") return "#ec4899";
+    return "#6b7280";
+  };
+
+  // Layout: nodes at top, branches below each node
+  const nodeW = 160;
+  const nodeH = 50;
+  const branchW = 140;
+  const branchH = 36;
+  const gapX = 20;
+  const gapY = 16;
+  const startX = 30;
+  const startY = 30;
+
+  // Position nodes in a row
+  const posNodes = nodes.map((n, i) => ({
+    ...n,
+    x: startX + i * (nodeW + gapX),
+    y: startY,
+  }));
+
+  // Position branches below nodes, grouped by focusNodeId or the first node
+  const posBranches = branches.map((b, i) => {
+    const parentNode = posNodes.find((n) =>
+      (b.focus_node_id || b.focusNodeId) === n.id
+    ) || posNodes[0];
+    const parentX = parentNode ? parentNode.x : startX;
+    const col = branches.filter((bb, j) =>
+      j < i && ((bb.focus_node_id || bb.focusNodeId || "") === (b.focus_node_id || b.focusNodeId || ""))
+    ).length;
+    return {
+      ...b,
+      x: parentX + col * (branchW + 10),
+      y: startY + nodeH + gapY + 20,
+      parentX: parentX + nodeW / 2,
+      parentY: startY + nodeH,
+    };
+  });
+
+  const width = Math.max(700,
+    Math.max(
+      ...posNodes.map((n) => n.x + nodeW + 40),
+      ...posBranches.map((b) => b.x + branchW + 40)
+    )
+  );
+  const height = Math.max(300, startY + nodeH + gapY + 30 + branchH + 60);
+
+  // Verification info
+  const verification = proof?.last_verification;
+  const attemptNum = proof?.attempt_number || proof?.attemptNumber || 0;
+  const scratchPath = proof?.scratch_path || proof?.scratchPath || "";
+
   return h`
     <div className="graph-canvas">
+      <div className="graph-info">
+        <span>Phase: <strong>${proof?.phase || "idle"}</strong></span>
+        <span>\u00a0\u00b7\u00a0 Nodes: ${nodes.length}</span>
+        <span>\u00a0\u00b7\u00a0 Branches: ${branches.length}</span>
+        <span>\u00a0\u00b7\u00a0 Attempts: ${attemptNum}</span>
+        ${scratchPath ? h`<span>\u00a0\u00b7\u00a0 <code style=${{fontSize:"10px"}}>${scratchPath}</code></span>` : null}
+      </div>
       <svg width=${width} height=${height} xmlns="http://www.w3.org/2000/svg">
-        ${positioned.map((n, i) => {
-          if (i > 0) {
-            const prev = positioned[i - 1];
-            return h`<line key=${"e" + i}
-              x1=${prev.x + nodeW / 2} y1=${prev.y + nodeH}
-              x2=${n.x + nodeW / 2} y2=${n.y}
-              stroke="#333" strokeWidth="1.5" />`;
-          }
-          return null;
-        })}
-        ${positioned.map((n) => h`
+        <!-- Edges from nodes to branches -->
+        ${posBranches.map((b, i) => h`
+          <line key=${"edge" + i}
+            x1=${b.parentX} y1=${b.parentY}
+            x2=${b.x + branchW / 2} y2=${b.y}
+            stroke=${roleColor(b.role)} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.5" />
+        `)}
+
+        <!-- Proof nodes (top row) -->
+        ${posNodes.map((n) => h`
           <g key=${n.id}>
             <rect x=${n.x} y=${n.y} width=${nodeW} height=${nodeH}
-              rx="6" fill="#1a1a1a" stroke=${statusColor(n.status)} strokeWidth="2" />
-            <text x=${n.x + nodeW / 2} y=${n.y + 16} textAnchor="middle"
-              fill="#e5e5e5" fontSize="11" fontWeight="600" fontFamily="var(--sans)">
-              ${n.label.length > 14 ? n.label.slice(0, 12) + ".." : n.label}
+              rx="8" fill="#1a1a1a" stroke=${statusColor(n.status)} strokeWidth="2.5" />
+            <text x=${n.x + nodeW / 2} y=${n.y + 18} textAnchor="middle"
+              fill="#e5e5e5" fontSize="12" fontWeight="700" fontFamily="system-ui">
+              ${n.label.length > 18 ? n.label.slice(0, 16) + ".." : n.label}
             </text>
-            <text x=${n.x + nodeW / 2} y=${n.y + 30} textAnchor="middle"
-              fill="#737373" fontSize="9" fontFamily="var(--mono)">
-              ${n.kind} \u00b7 ${n.status}
+            <text x=${n.x + nodeW / 2} y=${n.y + 33} textAnchor="middle"
+              fill="#a3a3a3" fontSize="10" fontFamily="system-ui">
+              ${n.kind || "node"} \u00b7 ${n.status}
+            </text>
+            <text x=${n.x + nodeW / 2} y=${n.y + 45} textAnchor="middle"
+              fill="#525252" fontSize="8" fontFamily="monospace">
+              ${(n.statement || "").slice(0, 30)}${(n.statement || "").length > 30 ? ".." : ""}
             </text>
           </g>
         `)}
+
+        <!-- Branches (below nodes) -->
+        ${posBranches.map((b) => {
+          const hasSnippet = !!(b.lean_snippet || b.leanSnippet || "").trim();
+          return h`
+            <g key=${b.id}>
+              <rect x=${b.x} y=${b.y} width=${branchW} height=${branchH}
+                rx="5" fill="#111" stroke=${roleColor(b.role)} strokeWidth="1.5"
+                opacity=${hasSnippet ? 1 : 0.6} />
+              <text x=${b.x + branchW / 2} y=${b.y + 14} textAnchor="middle"
+                fill=${roleColor(b.role)} fontSize="9" fontWeight="600" fontFamily="system-ui">
+                ${b.role}${b.hidden ? " (hidden)" : ""}
+              </text>
+              <text x=${b.x + branchW / 2} y=${b.y + 26} textAnchor="middle"
+                fill="#737373" fontSize="8" fontFamily="system-ui">
+                ${String(b.status || "idle")} \u00b7 score ${(b.score || 0).toFixed(0)} \u00b7 ${b.attempt_count || b.attemptCount || 0} tries
+              </text>
+              ${hasSnippet ? h`
+                <circle cx=${b.x + branchW - 8} cy=${b.y + 8} r="4"
+                  fill="#22c55e" opacity="0.8" />
+              ` : null}
+            </g>
+          `;
+        })}
+
+        <!-- Verification result banner -->
+        ${verification ? h`
+          <rect x=${startX} y=${height - 40} width=${width - 60} height="28"
+            rx="5" fill=${verification.ok ? "#052e16" : "#450a0a"}
+            stroke=${verification.ok ? "#22c55e" : "#ef4444"} strokeWidth="1" />
+          <text x=${startX + 12} y=${height - 22}
+            fill=${verification.ok ? "#86efac" : "#fca5a5"} fontSize="11" fontFamily="system-ui">
+            ${verification.ok ? "Lean verified" : "Lean failed"}: ${
+              verification.ok ? "Proof accepted"
+                : (verification.stderr || "").split("\\n")[0].slice(0, 80)
+            }
+          </text>
+        ` : null}
       </svg>
     </div>
   `;
