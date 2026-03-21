@@ -30,7 +30,15 @@ pub fn draw(frame: &mut Frame<'_>, state: &mut AppState) {
     draw_header(frame, state, chunks[0]);
     draw_chat_area(frame, state, chunks[1]);
     draw_input_area(frame, state, chunks[2]);
-    draw_status_bar(frame, state, chunks[3]);
+
+    if state.command_mode {
+        draw_command_bar(frame, state, chunks[3]);
+        if !state.command_completions.is_empty() {
+            draw_completion_popup(frame, state, chunks[3]);
+        }
+    } else {
+        draw_status_bar(frame, state, chunks[3]);
+    }
 
     if state.has_open_question() {
         render_question_modal(frame, state);
@@ -309,6 +317,69 @@ fn draw_status_bar(f: &mut Frame<'_>, state: &AppState, area: Rect) {
     ]))
     .style(Style::default().bg(Color::Rgb(30, 30, 30)));
     f.render_widget(para, area);
+}
+
+// ---------------------------------------------------------------------------
+// Command bar (/ mode)
+// ---------------------------------------------------------------------------
+
+fn draw_command_bar(f: &mut Frame<'_>, state: &AppState, area: Rect) {
+    let mut spans = vec![Span::styled(
+        "/".to_string(),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    )];
+    spans.extend(build_cursor_spans(
+        &state.command_buffer,
+        state.command_cursor,
+    ));
+    let para = Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Rgb(30, 30, 30)));
+    f.render_widget(para, area);
+}
+
+fn draw_completion_popup(f: &mut Frame<'_>, state: &AppState, cmd_area: Rect) {
+    let completions = &state.command_completions;
+    let max_show = completions.len().min(8);
+    if max_show == 0 {
+        return;
+    }
+
+    let popup_height = max_show as u16;
+    let popup_y = cmd_area.y.saturating_sub(popup_height);
+    let popup_width = completions
+        .iter()
+        .map(|c| c.len())
+        .max()
+        .unwrap_or(10)
+        .min(40) as u16
+        + 4;
+
+    let popup_area = Rect {
+        x: cmd_area.x + 1,
+        y: popup_y,
+        width: popup_width.min(cmd_area.width),
+        height: popup_height,
+    };
+
+    f.render_widget(Clear, popup_area);
+
+    let lines: Vec<Line<'static>> = completions
+        .iter()
+        .take(max_show)
+        .enumerate()
+        .map(|(i, c)| {
+            let style = if state.completion_idx == Some(i) {
+                Style::default().fg(Color::Black).bg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            Line::from(Span::styled(format!(" /{c} "), style))
+        })
+        .collect();
+
+    let para = Paragraph::new(lines).style(Style::default().bg(Color::Rgb(40, 40, 40)));
+    f.render_widget(para, popup_area);
 }
 
 // ---------------------------------------------------------------------------

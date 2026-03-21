@@ -116,6 +116,12 @@ pub struct AppState {
     pub turn_in_flight: bool,
     pub verification_in_flight: bool,
     pub turn_started_at: Option<std::time::Instant>,
+    /// Whether the command bar (/ mode) is active.
+    pub command_mode: bool,
+    pub command_buffer: String,
+    pub command_cursor: usize,
+    pub command_completions: Vec<String>,
+    pub completion_idx: Option<usize>,
 }
 
 impl AppState {
@@ -152,6 +158,11 @@ impl AppState {
             turn_in_flight: false,
             verification_in_flight: false,
             turn_started_at: None,
+            command_mode: false,
+            command_buffer: String::new(),
+            command_cursor: 0,
+            command_completions: Vec::new(),
+            completion_idx: None,
         }
     }
 
@@ -2025,6 +2036,60 @@ impl AppState {
         }
         None
     }
+}
+
+/// All known slash commands for tab completion.
+pub const SLASH_COMMANDS: &[&str] = &[
+    "help",
+    "status",
+    "new",
+    "clear",
+    "resume",
+    "nodes",
+    "branches",
+    "agents",
+    "tasks",
+    "focus",
+    "agent spawn",
+    "proof",
+    "paper",
+    "questions",
+    "answer",
+    "instructions",
+    "memory",
+    "remember",
+    "share",
+    "corpus status",
+    "corpus search",
+    "corpus ingest",
+    "corpus recluster",
+    "sync status",
+    "sync enable",
+    "sync disable",
+    "sync drain",
+    "export paper",
+    "export tex",
+    "export lean",
+    "export all",
+    "autonomous status",
+    "autonomous start",
+    "autonomous stop",
+    "autonomous step",
+    "theorem",
+    "lemma",
+    "verify",
+    "login",
+    "dashboard",
+    "sessions",
+];
+
+/// Compute tab completions for the current command buffer.
+pub fn command_completions(input: &str) -> Vec<String> {
+    SLASH_COMMANDS
+        .iter()
+        .filter(|c| c.starts_with(input))
+        .map(|c| c.to_string())
+        .collect()
 }
 
 /// Find the byte position after deleting one word backward from `cursor`.

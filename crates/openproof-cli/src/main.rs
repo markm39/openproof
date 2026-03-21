@@ -772,72 +772,136 @@ async fn run_app(
         if event::poll(Duration::from_millis(16))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    let next_event = match key.code {
-                        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            Some(AppEvent::Quit)
-                        }
-                        KeyCode::Tab => Some(AppEvent::FocusNext),
-                        KeyCode::Up if state.has_open_question() => {
-                            Some(AppEvent::SelectPrevQuestionOption)
-                        }
-                        KeyCode::Down if state.has_open_question() => {
-                            Some(AppEvent::SelectNextQuestionOption)
-                        }
-                        KeyCode::Up => Some(match state.focus {
-                            FocusPane::Sessions => AppEvent::SelectPrevSession,
-                            _ => AppEvent::ScrollTranscriptUp,
-                        }),
-                        KeyCode::Down => Some(match state.focus {
-                            FocusPane::Sessions => AppEvent::SelectNextSession,
-                            _ => AppEvent::ScrollTranscriptDown,
-                        }),
-                        KeyCode::PageUp => Some(AppEvent::ScrollTranscriptUp),
-                        KeyCode::PageDown => Some(AppEvent::ScrollTranscriptDown),
-                        // Cursor movement
-                        KeyCode::Left => Some(AppEvent::CursorLeft),
-                        KeyCode::Right => Some(AppEvent::CursorRight),
-                        KeyCode::Home => Some(AppEvent::CursorHome),
-                        KeyCode::End => Some(AppEvent::CursorEnd),
-                        KeyCode::Delete => Some(AppEvent::DeleteForward),
-                        KeyCode::Backspace => Some(AppEvent::Backspace),
-                        // Ctrl shortcuts
-                        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            Some(AppEvent::CursorHome)
-                        }
-                        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            Some(AppEvent::CursorEnd)
-                        }
-                        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            Some(AppEvent::ClearToStart)
-                        }
-                        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                            Some(AppEvent::DeleteWordBackward)
-                        }
-                        // Character input
-                        KeyCode::Char(ch)
-                            if !key.modifiers.contains(KeyModifiers::CONTROL) =>
-                        {
-                            Some(AppEvent::InputChar(ch))
-                        }
-                        _ => None,
-                    };
+                    if state.command_mode {
+                        // --- Command mode key handling ---
+                        handle_command_mode_key(key, state, &tx, &store);
+                    } else {
+                        // --- Normal mode key handling ---
+                        let next_event = match key.code {
+                            KeyCode::Char('c')
+                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                if state.command_mode {
+                                    // Exit command mode
+                                    state.command_mode = false;
+                                    state.command_buffer.clear();
+                                    state.command_cursor = 0;
+                                    state.command_completions.clear();
+                                    state.completion_idx = None;
+                                    None
+                                } else if !state.composer.is_empty() {
+                                    // First Ctrl+C: clear input
+                                    state.composer.clear();
+                                    state.composer_cursor = 0;
+                                    None
+                                } else {
+                                    // Second Ctrl+C (empty input): quit
+                                    Some(AppEvent::Quit)
+                                }
+                            }
+                            KeyCode::Esc if state.command_mode => {
+                                state.command_mode = false;
+                                state.command_buffer.clear();
+                                state.command_cursor = 0;
+                                state.command_completions.clear();
+                                state.completion_idx = None;
+                                None
+                            }
+                            KeyCode::Tab => Some(AppEvent::FocusNext),
+                            KeyCode::Up if state.has_open_question() => {
+                                Some(AppEvent::SelectPrevQuestionOption)
+                            }
+                            KeyCode::Down if state.has_open_question() => {
+                                Some(AppEvent::SelectNextQuestionOption)
+                            }
+                            KeyCode::Up => Some(match state.focus {
+                                FocusPane::Sessions => AppEvent::SelectPrevSession,
+                                _ => AppEvent::ScrollTranscriptUp,
+                            }),
+                            KeyCode::Down => Some(match state.focus {
+                                FocusPane::Sessions => AppEvent::SelectNextSession,
+                                _ => AppEvent::ScrollTranscriptDown,
+                            }),
+                            KeyCode::PageUp => Some(AppEvent::ScrollTranscriptUp),
+                            KeyCode::PageDown => Some(AppEvent::ScrollTranscriptDown),
+                            // Cursor movement
+                            KeyCode::Left => Some(AppEvent::CursorLeft),
+                            KeyCode::Right => Some(AppEvent::CursorRight),
+                            KeyCode::Home => Some(AppEvent::CursorHome),
+                            KeyCode::End => Some(AppEvent::CursorEnd),
+                            KeyCode::Delete => Some(AppEvent::DeleteForward),
+                            KeyCode::Backspace => Some(AppEvent::Backspace),
+                            // Ctrl shortcuts
+                            KeyCode::Char('a')
+                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                Some(AppEvent::CursorHome)
+                            }
+                            KeyCode::Char('e')
+                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                Some(AppEvent::CursorEnd)
+                            }
+                            KeyCode::Char('u')
+                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                Some(AppEvent::ClearToStart)
+                            }
+                            KeyCode::Char('w')
+                                if key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                Some(AppEvent::DeleteWordBackward)
+                            }
+                            // '/' on empty composer: enter command mode
+                            KeyCode::Char('/')
+                                if state.composer.is_empty()
+                                    && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                state.command_mode = true;
+                                state.command_buffer.clear();
+                                state.command_cursor = 0;
+                                state.command_completions =
+                                    openproof_core::command_completions("");
+                                state.completion_idx = None;
+                                None
+                            }
+                            // Character input
+                            KeyCode::Char(ch)
+                                if !key.modifiers.contains(KeyModifiers::CONTROL) =>
+                            {
+                                Some(AppEvent::InputChar(ch))
+                            }
+                            _ => None,
+                        };
 
-                    if let Some(next_event) = next_event {
-                        if let Some(write) = state.apply(next_event) {
-                            persist_write(tx.clone(), store.clone(), write);
-                        }
-                    } else if matches!(key.code, KeyCode::Enter) {
-                        if state.has_open_question() && state.composer.trim().is_empty() {
-                            submit_selected_question_option(tx.clone(), store.clone(), state);
-                        } else if let Some(submission) = state.submit_composer() {
-                            persist_write(
-                                tx.clone(),
-                                store.clone(),
-                                openproof_core::PendingWrite {
-                                    session: submission.session_snapshot.clone(),
-                                },
-                            );
-                            handle_submission(tx.clone(), store.clone(), state, submission);
+                        if let Some(next_event) = next_event {
+                            if let Some(write) = state.apply(next_event) {
+                                persist_write(tx.clone(), store.clone(), write);
+                            }
+                        } else if matches!(key.code, KeyCode::Enter) {
+                            if state.has_open_question()
+                                && state.composer.trim().is_empty()
+                            {
+                                submit_selected_question_option(
+                                    tx.clone(),
+                                    store.clone(),
+                                    state,
+                                );
+                            } else if let Some(submission) = state.submit_composer() {
+                                persist_write(
+                                    tx.clone(),
+                                    store.clone(),
+                                    openproof_core::PendingWrite {
+                                        session: submission.session_snapshot.clone(),
+                                    },
+                                );
+                                handle_submission(
+                                    tx.clone(),
+                                    store.clone(),
+                                    state,
+                                    submission,
+                                );
+                            }
                         }
                     }
                 }
@@ -926,6 +990,167 @@ fn persist_verification_result(
             });
         }
     });
+}
+
+fn handle_command_mode_key(
+    key: event::KeyEvent,
+    state: &mut AppState,
+    tx: &mpsc::UnboundedSender<AppEvent>,
+    store: &AppStore,
+) {
+    match key.code {
+        KeyCode::Esc => {
+            state.command_mode = false;
+            state.command_buffer.clear();
+            state.command_cursor = 0;
+            state.command_completions.clear();
+            state.completion_idx = None;
+        }
+        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.command_mode = false;
+            state.command_buffer.clear();
+            state.command_cursor = 0;
+            state.command_completions.clear();
+            state.completion_idx = None;
+        }
+        KeyCode::Enter => {
+            let buffer = state.command_buffer.clone();
+            state.command_mode = false;
+            state.command_buffer.clear();
+            state.command_cursor = 0;
+            state.command_completions.clear();
+            state.completion_idx = None;
+            if !buffer.is_empty() {
+                // Submit as a slash command through the normal path.
+                let text = format!("/{buffer}");
+                if let Some(submission) = state.submit_text(text) {
+                    persist_write(
+                        tx.clone(),
+                        store.clone(),
+                        openproof_core::PendingWrite {
+                            session: submission.session_snapshot.clone(),
+                        },
+                    );
+                    handle_submission(tx.clone(), store.clone(), state, submission);
+                }
+            }
+        }
+        KeyCode::Tab => {
+            // Cycle to next completion.
+            if state.command_completions.is_empty() {
+                state.command_completions =
+                    openproof_core::command_completions(&state.command_buffer);
+                state.completion_idx = None;
+            }
+            if !state.command_completions.is_empty() {
+                let idx = match state.completion_idx {
+                    Some(i) => (i + 1) % state.command_completions.len(),
+                    None => 0,
+                };
+                state.completion_idx = Some(idx);
+                state.command_buffer = state.command_completions[idx].clone();
+                state.command_cursor = state.command_buffer.len();
+            }
+        }
+        KeyCode::BackTab => {
+            // Cycle to previous completion.
+            if state.command_completions.is_empty() {
+                state.command_completions =
+                    openproof_core::command_completions(&state.command_buffer);
+                state.completion_idx = None;
+            }
+            if !state.command_completions.is_empty() {
+                let idx = match state.completion_idx {
+                    Some(0) | None => state.command_completions.len() - 1,
+                    Some(i) => i - 1,
+                };
+                state.completion_idx = Some(idx);
+                state.command_buffer = state.command_completions[idx].clone();
+                state.command_cursor = state.command_buffer.len();
+            }
+        }
+        // Ctrl shortcuts
+        KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.command_cursor = 0;
+        }
+        KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.command_cursor = state.command_buffer.len();
+        }
+        KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.command_buffer.drain(..state.command_cursor);
+            state.command_cursor = 0;
+            state.command_completions =
+                openproof_core::command_completions(&state.command_buffer);
+            state.completion_idx = None;
+        }
+        KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if state.command_cursor > 0 {
+                let new_pos = openproof_core::delete_word_backward_pos(
+                    &state.command_buffer,
+                    state.command_cursor,
+                );
+                state.command_buffer.drain(new_pos..state.command_cursor);
+                state.command_cursor = new_pos;
+                state.command_completions =
+                    openproof_core::command_completions(&state.command_buffer);
+                state.completion_idx = None;
+            }
+        }
+        KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+            state.command_buffer.insert(state.command_cursor, c);
+            state.command_cursor += c.len_utf8();
+            state.command_completions =
+                openproof_core::command_completions(&state.command_buffer);
+            state.completion_idx = None;
+        }
+        KeyCode::Backspace => {
+            if state.command_cursor > 0 {
+                let prev = state.command_buffer[..state.command_cursor]
+                    .char_indices()
+                    .next_back()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+                state.command_buffer.remove(prev);
+                state.command_cursor = prev;
+                state.command_completions =
+                    openproof_core::command_completions(&state.command_buffer);
+                state.completion_idx = None;
+            }
+        }
+        KeyCode::Left => {
+            if state.command_cursor > 0 {
+                state.command_cursor = state.command_buffer[..state.command_cursor]
+                    .char_indices()
+                    .next_back()
+                    .map(|(i, _)| i)
+                    .unwrap_or(0);
+            }
+        }
+        KeyCode::Right => {
+            if state.command_cursor < state.command_buffer.len() {
+                state.command_cursor = state.command_buffer[state.command_cursor..]
+                    .char_indices()
+                    .nth(1)
+                    .map(|(i, _)| state.command_cursor + i)
+                    .unwrap_or(state.command_buffer.len());
+            }
+        }
+        KeyCode::Delete => {
+            if state.command_cursor < state.command_buffer.len() {
+                state.command_buffer.remove(state.command_cursor);
+                state.command_completions =
+                    openproof_core::command_completions(&state.command_buffer);
+                state.completion_idx = None;
+            }
+        }
+        KeyCode::Home => {
+            state.command_cursor = 0;
+        }
+        KeyCode::End => {
+            state.command_cursor = state.command_buffer.len();
+        }
+        _ => {}
+    }
 }
 
 fn handle_submission(
