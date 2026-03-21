@@ -187,15 +187,14 @@ fn draw_smooth_scrollbar(buf: &mut Buffer, area: Rect, position: usize, max_posi
     }
     let col = area.x + area.width - 1;
     let height = area.height as usize;
-    let half_cells = height * 2; // 2x resolution
+    let half_cells = height * 2;
 
-    // Thumb size: proportional to viewport/content ratio, minimum 3 half-cells.
+    // Thumb size proportional to viewport/content ratio, minimum 3 half-cells.
     let thumb_size = ((height as f64 / (height as f64 + max_position as f64)) * half_cells as f64)
         .round()
         .max(3.0) as usize;
     let thumb_size = thumb_size.min(half_cells);
 
-    // Thumb position in half-cell units.
     let track_range = half_cells.saturating_sub(thumb_size);
     let thumb_start = if max_position > 0 {
         (position as f64 / max_position as f64 * track_range as f64).round() as usize
@@ -212,16 +211,23 @@ fn draw_smooth_scrollbar(buf: &mut Buffer, area: Rect, position: usize, max_posi
         let top_in = top_half >= thumb_start && top_half < thumb_end;
         let bot_in = bot_half >= thumb_start && bot_half < thumb_end;
 
-        let (ch, style) = match (top_in, bot_in) {
-            (true, true) => ("█", Style::default().fg(color)),
-            (true, false) => ("▀", Style::default().fg(color)),
-            (false, true) => ("▄", Style::default().fg(color)),
-            (false, false) => continue, // invisible -- don't overwrite content
-        };
-
         let cell = &mut buf[(col, area.y + row as u16)];
-        cell.set_symbol(ch);
-        cell.set_style(style);
+        match (top_in, bot_in) {
+            (true, true) => {
+                // Use background fill to avoid the gap between full-block glyphs.
+                cell.set_symbol(" ");
+                cell.set_style(Style::default().bg(color));
+            }
+            (true, false) => {
+                cell.set_symbol("\u{2580}"); // ▀
+                cell.set_style(Style::default().fg(color));
+            }
+            (false, true) => {
+                cell.set_symbol("\u{2584}"); // ▄
+                cell.set_style(Style::default().fg(color));
+            }
+            (false, false) => {} // don't touch -- keep content visible
+        }
     }
 }
 

@@ -957,8 +957,9 @@ async fn run_app(
                         MouseEventKind::ScrollDown => {
                             let _ = state.apply(AppEvent::ScrollTranscriptDown);
                         }
-                        MouseEventKind::Down(MouseButton::Left) => {
-                            // Click on rightmost column: jump scroll position.
+                        MouseEventKind::Down(MouseButton::Left)
+                        | MouseEventKind::Drag(MouseButton::Left) => {
+                            // Click/drag on rightmost column: jump scroll position.
                             let term_width = terminal.size()?.width;
                             if mouse.column + 1 >= term_width && state.visible_height > 0 {
                                 let max = state
