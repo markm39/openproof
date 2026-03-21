@@ -369,9 +369,21 @@ function GraphTab({ session }) {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState(flowNodes);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // Sync when data changes from polling
+  // Sync data from polling without resetting user-dragged positions
   useEffect(() => {
-    setRfNodes(flowNodes);
+    setRfNodes((prev) => {
+      const prevById = {};
+      for (const n of prev) prevById[n.id] = n;
+      // Update existing nodes' data but keep their position if they were dragged
+      const merged = flowNodes.map((fn) => {
+        const existing = prevById[fn.id];
+        if (existing) {
+          return { ...fn, position: existing.position };
+        }
+        return fn;
+      });
+      return merged;
+    });
     setRfEdges(flowEdges);
   }, [flowNodes, flowEdges]);
 
