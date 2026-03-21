@@ -178,8 +178,50 @@ pub fn run_autonomous_step(
         });
 
     if let Some(basis) = repair_basis {
-        // BACKTRACKING: After 3+ failed repairs, abandon this approach entirely
-        // and try a completely different proof strategy.
+        // BACKTRACKING: After 3+ failed repairs, abandon this approach entirely.
+        // attempt_count 3-5: try a different proof strategy
+        // attempt_count 6+: decompose into sub-lemmas
+        if basis.attempt_count >= 6 {
+            // DECOMPOSITION: break into sub-lemmas
+            actions.push(format!(
+                "Decomposing: {} failed repairs. Breaking into sub-lemmas.",
+                basis.attempt_count
+            ));
+
+            let decompose_context = format!(
+                "The proof of {} has failed {} times with both the original and alternative approaches.\n\n\
+                 DECOMPOSE this goal into 2-4 independent sub-lemmas. For each sub-lemma:\n\
+                 1. Emit LEMMA: <label> :: <Lean type signature>\n\
+                 2. Give a brief justification of why this sub-lemma helps\n\
+                 3. Sketch how the sub-lemmas compose into the final proof\n\n\
+                 The sub-lemmas should be EASIER to prove individually than the full goal.\n\
+                 Each will be verified independently by Lean.\n\n\
+                 Current target: {target}\n\nFailed approach summary:\n{}",
+                target, basis.attempt_count, basis.summary,
+            );
+
+            let title = format!("{} decomposer", latest_session.title);
+            let (branch_id, session_snapshot) = ensure_hidden_agent_branch(
+                tx.clone(),
+                store.clone(),
+                state,
+                AgentRole::Planner,
+                &title,
+                "Decompose goal into independent sub-lemmas",
+            )?;
+            start_agent_branch_turn(
+                tx,
+                store,
+                AgentRole::Planner,
+                decompose_context,
+                branch_id.clone(),
+                branch_id.clone(),
+                session_snapshot,
+            );
+            actions.push(format!("Started decomposer branch {branch_id}."));
+            return Ok(actions.join("\n"));
+        }
+
         if basis.attempt_count >= 3 {
             actions.push(format!(
                 "Backtracking: {} failed repairs on the same approach. Trying a new strategy.",
