@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use chrono::Utc;
 use directories::BaseDirs;
 use rusqlite::Connection;
 use std::fs;

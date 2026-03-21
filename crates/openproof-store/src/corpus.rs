@@ -934,6 +934,7 @@ impl AppStore {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_corpus_module(
         &self,
         module_name: &str,
@@ -1036,6 +1037,7 @@ impl AppStore {
         Ok(count > 0)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn upsert_library_seed_declaration_tx(
         &self,
         tx: &rusqlite::Transaction<'_>,
