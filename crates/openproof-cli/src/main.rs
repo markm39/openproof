@@ -2828,11 +2828,17 @@ fn apply_local_command(
                 match start_dashboard_server(store_dash, lean_dir, None).await {
                     Ok(server) => {
                         let url = format!("http://127.0.0.1:{}", server.port);
+                        // Brief delay for axum to start accepting.
+                        tokio::time::sleep(Duration::from_millis(100)).await;
                         open_browser(&url);
                         let _ = tx_dash.send(AppEvent::AppendNotice {
                             title: "Dashboard".to_string(),
                             content: format!("Dashboard opened at {url}"),
                         });
+                        // Keep the server alive until the TUI exits.
+                        // Dropping DashboardServer closes the shutdown channel,
+                        // which kills the axum server immediately.
+                        std::mem::forget(server);
                     }
                     Err(e) => {
                         let _ = tx_dash.send(AppEvent::AppendNotice {
