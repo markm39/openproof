@@ -1,9 +1,9 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::manifest::{read_lake_manifest, LakeManifestPackage};
+use crate::manifest::read_lake_manifest;
 
 #[derive(Debug, Clone)]
 pub struct PackageSeedInfo {

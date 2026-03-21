@@ -8,7 +8,7 @@ use tokio::process::Command;
 
 use crate::packages::{
     collect_seed_packages, decl_namespace, environment_fingerprint, package_revision_set_hash,
-    resolve_package_for_module, PackageSeedInfo,
+    resolve_package_for_module,
 };
 use crate::manifest::read_lake_manifest;
 
@@ -45,6 +45,7 @@ enum ExportRecord {
         #[serde(rename = "docString")]
         doc_string: Option<String>,
         #[serde(rename = "searchText")]
+        #[allow(dead_code)]
         search_text: Option<String>,
     },
 }

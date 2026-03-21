@@ -10,7 +10,7 @@ pub use search::*;
 
 use openproof_cloud::CloudCorpusClient;
 use openproof_protocol::{
-    CloudCorpusAuthContext, CloudCorpusSearchHit, CloudCorpusUploadItem, IngestLibrarySeedResult,
+    CloudCorpusAuthContext, CloudCorpusSearchHit, IngestLibrarySeedResult,
     ShareMode,
 };
 use openproof_store::AppStore;
