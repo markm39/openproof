@@ -1,7 +1,6 @@
 pub mod markdown;
 
 use openproof_core::{AppState, Overlay};
-use openproof_protocol::ProofNodeStatus;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -10,7 +9,7 @@ use ratatui::{
     Frame,
 };
 
-/// Draw the full TUI frame: header / chat area / input / status bar.
+/// Draw the full TUI frame: chat area / input / status bar.
 pub fn draw(frame: &mut Frame<'_>, state: &mut AppState) {
     let area = frame.area();
 
@@ -20,24 +19,22 @@ pub fn draw(frame: &mut Frame<'_>, state: &mut AppState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(1),            // header
             Constraint::Min(5),               // chat area
             Constraint::Length(input_height), // input
             Constraint::Length(1),            // status bar
         ])
         .split(area);
 
-    draw_header(frame, state, chunks[0]);
-    draw_chat_area(frame, state, chunks[1]);
-    draw_input_area(frame, state, chunks[2]);
+    draw_chat_area(frame, state, chunks[0]);
+    draw_input_area(frame, state, chunks[1]);
 
     if state.command_mode {
-        draw_command_bar(frame, state, chunks[3]);
+        draw_command_bar(frame, state, chunks[2]);
         if !state.command_completions.is_empty() {
-            draw_completion_popup(frame, state, chunks[3]);
+            draw_completion_popup(frame, state, chunks[2]);
         }
     } else {
-        draw_status_bar(frame, state, chunks[3]);
+        draw_status_bar(frame, state, chunks[2]);
     }
 
     if state.has_open_question() {
@@ -48,83 +45,6 @@ pub fn draw(frame: &mut Frame<'_>, state: &mut AppState) {
     if let Some(ref overlay) = state.overlay {
         draw_overlay(frame, state, overlay, area);
     }
-}
-
-// ---------------------------------------------------------------------------
-// Header bar
-// ---------------------------------------------------------------------------
-
-fn draw_header(f: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let session_info = state.current_session().map(|s| {
-        let phase = &s.proof.phase;
-        let node_count = s.proof.nodes.len();
-        let verified = s
-            .proof
-            .nodes
-            .iter()
-            .filter(|n| n.status == ProofNodeStatus::Verified)
-            .count();
-        let focus = s
-            .proof
-            .active_node_id
-            .as_deref()
-            .and_then(|id| s.proof.nodes.iter().find(|n| n.id == id))
-            .map(|n| n.label.clone())
-            .unwrap_or_else(|| "none".to_string());
-        (s.title.clone(), phase.clone(), node_count, verified, focus)
-    });
-
-    let spans = if let Some((title, phase, nodes, verified, focus)) = session_info {
-        let activity_str = match (state.turn_in_flight, state.verification_in_flight) {
-            (true, true) => "turn+verify",
-            (true, false) => "turn",
-            (false, true) => "verify",
-            (false, false) => "idle",
-        };
-        let activity_color = if state.turn_in_flight || state.verification_in_flight {
-            Color::Yellow
-        } else {
-            Color::DarkGray
-        };
-        vec![
-            Span::styled(
-                " openproof ",
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(format!(" {title}")),
-            Span::styled(format!(" | {phase}"), Style::default().fg(Color::DarkGray)),
-            Span::styled(
-                format!(" | {nodes} nodes, {verified} verified"),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!(" | focus: {focus}"),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                format!(" | {activity_str}"),
-                Style::default().fg(activity_color),
-            ),
-        ]
-    } else {
-        vec![
-            Span::styled(
-                " openproof ",
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            Span::raw(" no session"),
-        ]
-    };
-
-    let para =
-        Paragraph::new(Line::from(spans)).style(Style::default().bg(Color::Rgb(30, 30, 30)));
-    f.render_widget(para, area);
 }
 
 // ---------------------------------------------------------------------------
@@ -148,38 +68,34 @@ fn draw_chat_area(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
                     .transcript
                     .iter()
                     .flat_map(|entry| {
-                        let (role_label, role_color) = match entry.role {
-                            openproof_protocol::MessageRole::User => ("You:", Color::Cyan),
+                        let mut lines: Vec<Line<'static>> = vec![Line::from("")];
+
+                        match entry.role {
+                            openproof_protocol::MessageRole::User => {
+                                for content_line in entry.content.lines() {
+                                    lines.push(Line::from(vec![
+                                        Span::styled(
+                                            "> ".to_string(),
+                                            Style::default().fg(Color::DarkGray),
+                                        ),
+                                        Span::raw(content_line.to_string()),
+                                    ]));
+                                }
+                            }
                             openproof_protocol::MessageRole::Assistant => {
-                                ("Assistant:", Color::White)
+                                lines.extend(markdown::render_markdown(
+                                    &entry.content,
+                                    Style::default(),
+                                ));
                             }
-                            openproof_protocol::MessageRole::System => ("System:", Color::Magenta),
-                            openproof_protocol::MessageRole::Notice => ("Notice:", Color::Yellow),
-                        };
-
-                        let mut lines = vec![
-                            Line::from(""),
-                            Line::from(Span::styled(
-                                role_label.to_string(),
-                                Style::default()
-                                    .fg(role_color)
-                                    .add_modifier(Modifier::BOLD),
-                            )),
-                        ];
-
-                        // Use markdown rendering for assistant messages.
-                        if matches!(entry.role, openproof_protocol::MessageRole::Assistant) {
-                            lines.extend(markdown::render_markdown(
-                                &entry.content,
-                                Style::default(),
-                            ));
-                        } else if matches!(entry.role, openproof_protocol::MessageRole::User) {
-                            for content_line in entry.content.lines() {
-                                lines.push(Line::from(format!("  {content_line}")));
-                            }
-                        } else {
-                            for content_line in entry.content.lines() {
-                                lines.push(Line::from(content_line.to_string()));
+                            _ => {
+                                // System/Notice: dim text, no label
+                                for content_line in entry.content.lines() {
+                                    lines.push(Line::from(Span::styled(
+                                        content_line.to_string(),
+                                        Style::default().fg(Color::DarkGray),
+                                    )));
+                                }
                             }
                         }
                         lines
@@ -287,16 +203,22 @@ fn draw_input_area(f: &mut Frame<'_>, state: &AppState, area: Rect) {
 // ---------------------------------------------------------------------------
 
 fn draw_status_bar(f: &mut Frame<'_>, state: &AppState, area: Rect) {
-    let status_text = if state.status.is_empty() {
-        "Ready.".to_string()
+    let text = if state.turn_in_flight || state.verification_in_flight {
+        let activity = match (state.turn_in_flight, state.verification_in_flight) {
+            (true, true) => "working + verifying...",
+            (true, false) => "working...",
+            (false, true) => "verifying...",
+            _ => "",
+        };
+        Span::styled(
+            format!(" {activity}"),
+            Style::default().fg(Color::Yellow),
+        )
     } else {
-        state.status.clone()
+        Span::styled(" ".to_string(), Style::default().fg(Color::DarkGray))
     };
-    let para = Paragraph::new(Line::from(vec![
-        Span::raw(" "),
-        Span::styled(status_text, Style::default().fg(Color::DarkGray)),
-    ]))
-    .style(Style::default().bg(Color::Rgb(30, 30, 30)));
+    let para =
+        Paragraph::new(Line::from(text)).style(Style::default().bg(Color::Rgb(30, 30, 30)));
     f.render_widget(para, area);
 }
 
