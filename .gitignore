@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+dist/
+lean/.lake/
+lean/build/
+*.log
+.openproof/
+.bun/
+target/

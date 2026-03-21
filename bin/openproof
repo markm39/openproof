@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  TARGET="$(readlink "$SOURCE")"
+  if [[ "$TARGET" != /* ]]; then
+    SOURCE="$SOURCE_DIR/$TARGET"
+  else
+    SOURCE="$TARGET"
+  fi
+done
+
+ROOT_DIR="$(cd -P "$(dirname "$SOURCE")/.." && pwd)"
+LAUNCH_CWD="$PWD"
+cd "$ROOT_DIR"
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "openproof requires Rust cargo on PATH." >&2
+  exit 1
+fi
+
+exec env OPENPROOF_LAUNCH_CWD="$LAUNCH_CWD" cargo run -q -p openproof-cli -- "$@"

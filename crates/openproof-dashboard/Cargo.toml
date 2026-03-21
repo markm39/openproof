@@ -1,0 +1,15 @@
+[package]
+name = "openproof-dashboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+serde.workspace = true
+tokio.workspace = true
+openproof-protocol = { path = "../openproof-protocol" }
+openproof-store = { path = "../openproof-store" }
+openproof-model = { path = "../openproof-model" }
+openproof-lean = { path = "../openproof-lean" }

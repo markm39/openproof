@@ -1,0 +1,10 @@
+[package]
+name = "openproof-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+ratatui.workspace = true
+openproof-core = { path = "../openproof-core" }
+openproof-protocol = { path = "../openproof-protocol" }

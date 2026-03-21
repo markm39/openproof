@@ -1,0 +1,17 @@
+[package]
+name = "openproof-corpus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+openproof-protocol = { path = "../openproof-protocol" }
+openproof-store = { path = "../openproof-store" }
+openproof-cloud = { path = "../openproof-cloud" }
+openproof-lean = { path = "../openproof-lean" }
+anyhow.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tokio.workspace = true

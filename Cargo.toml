@@ -1,0 +1,38 @@
+[workspace]
+members = [
+  "crates/openproof-protocol",
+  "crates/openproof-core",
+  "crates/openproof-store",
+  "crates/openproof-model",
+  "crates/openproof-lean",
+  "crates/openproof-dashboard",
+  "crates/openproof-tui",
+  "crates/openproof-cli",
+  "crates/openproof-cloud",
+  "crates/openproof-corpus",
+  "crates/openproof-corpus-server",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1.0.100"
+axum = { version = "0.8.6", features = ["query"] }
+base64 = "0.22.1"
+chrono = { version = "0.4.42", features = ["clock", "serde"] }
+crossterm = "0.28.1"
+directories = "5.0.1"
+futures-util = "0.3.31"
+ratatui = "0.29.0"
+reqwest = { version = "0.12.24", default-features = false, features = ["json", "stream", "rustls-tls"] }
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+sha2 = "0.10"
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread", "sync", "time", "net", "signal", "process", "io-util"] }
+urlencoding = "2.1"
+uuid = { version = "1", features = ["v4"] }
