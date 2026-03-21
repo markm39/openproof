@@ -94,6 +94,22 @@ pub enum AppEvent {
     Quit,
 }
 
+/// Modal overlays rendered on top of the main UI.
+#[derive(Debug, Clone)]
+pub enum Overlay {
+    /// Interactive session picker for /resume and /sessions.
+    SessionPicker {
+        /// Index into `AppState::sessions`.
+        selected: usize,
+    },
+    /// Interactive node/branch picker for /focus.
+    FocusPicker {
+        /// (id, label, kind) tuples for all focusable targets.
+        items: Vec<(String, String, String)>,
+        selected: usize,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub sessions: Vec<SessionSnapshot>,
@@ -122,6 +138,7 @@ pub struct AppState {
     pub command_cursor: usize,
     pub command_completions: Vec<String>,
     pub completion_idx: Option<usize>,
+    pub overlay: Option<Overlay>,
 }
 
 impl AppState {
@@ -163,6 +180,7 @@ impl AppState {
             command_cursor: 0,
             command_completions: Vec::new(),
             completion_idx: None,
+            overlay: None,
         }
     }
 
@@ -2036,6 +2054,22 @@ impl AppState {
         }
         None
     }
+}
+
+/// Build focusable targets (nodes + branches) for the focus picker.
+pub fn build_focus_items(state: &AppState) -> Vec<(String, String, String)> {
+    let mut items = Vec::new();
+    if let Some(session) = state.current_session() {
+        for node in &session.proof.nodes {
+            let kind = format!("{:?}", node.kind).to_lowercase();
+            items.push((node.id.clone(), node.label.clone(), kind));
+        }
+        for branch in &session.proof.branches {
+            let kind = format!("branch/{}", branch.branch_kind);
+            items.push((branch.id.clone(), branch.title.clone(), kind));
+        }
+    }
+    items
 }
 
 /// All known slash commands for tab completion.

@@ -1,6 +1,6 @@
 pub mod markdown;
 
-use openproof_core::AppState;
+use openproof_core::{AppState, Overlay};
 use openproof_protocol::ProofNodeStatus;
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -42,6 +42,11 @@ pub fn draw(frame: &mut Frame<'_>, state: &mut AppState) {
 
     if state.has_open_question() {
         render_question_modal(frame, state);
+    }
+
+    // Overlays render last (on top of everything).
+    if let Some(ref overlay) = state.overlay {
+        draw_overlay(frame, state, overlay, area);
     }
 }
 
@@ -380,6 +385,176 @@ fn draw_completion_popup(f: &mut Frame<'_>, state: &AppState, cmd_area: Rect) {
 
     let para = Paragraph::new(lines).style(Style::default().bg(Color::Rgb(40, 40, 40)));
     f.render_widget(para, popup_area);
+}
+
+// ---------------------------------------------------------------------------
+// Overlays
+// ---------------------------------------------------------------------------
+
+fn draw_overlay(f: &mut Frame<'_>, state: &AppState, overlay: &Overlay, area: Rect) {
+    match overlay {
+        Overlay::SessionPicker { selected } => draw_session_picker(f, state, *selected, area),
+        Overlay::FocusPicker { items, selected } => {
+            draw_focus_picker(f, items, *selected, area)
+        }
+    }
+}
+
+fn draw_session_picker(f: &mut Frame<'_>, state: &AppState, selected: usize, area: Rect) {
+    let popup = centered_rect(75, 60, area);
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" Sessions (Enter=resume, Esc=cancel) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Rgb(25, 25, 25)));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    if inner.height < 2 || state.sessions.is_empty() {
+        let msg = Paragraph::new(Line::from(Span::styled(
+            " No sessions",
+            Style::default().fg(Color::DarkGray),
+        )));
+        f.render_widget(msg, inner);
+        return;
+    }
+
+    // Header row
+    let header_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: 1,
+    };
+    let header = Paragraph::new(Line::from(Span::styled(
+        format!(" {:30}  {:>5}  {:>5}  {}", "Title", "Msgs", "Nodes", "Updated"),
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD),
+    )));
+    f.render_widget(header, header_area);
+
+    let list_area = Rect {
+        x: inner.x,
+        y: inner.y + 1,
+        width: inner.width,
+        height: inner.height.saturating_sub(1),
+    };
+
+    let visible = list_area.height as usize;
+    let scroll_offset = if selected >= visible {
+        selected - visible + 1
+    } else {
+        0
+    };
+
+    let lines: Vec<Line<'static>> = state
+        .sessions
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(visible)
+        .map(|(i, s)| {
+            let style = if i == selected {
+                Style::default().fg(Color::Black).bg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let active = if i == state.selected_session { "*" } else { " " };
+            let ts: String = s.updated_at.chars().take(10).collect();
+            let title: String = s.title.chars().take(28).collect();
+            let text = format!(
+                "{active}{:30}  {:>5}  {:>5}  {}",
+                title,
+                s.transcript.len(),
+                s.proof.nodes.len(),
+                ts,
+            );
+            let truncated: String = text.chars().take(inner.width as usize).collect();
+            Line::from(Span::styled(truncated, style))
+        })
+        .collect();
+
+    f.render_widget(Paragraph::new(lines), list_area);
+}
+
+fn draw_focus_picker(
+    f: &mut Frame<'_>,
+    items: &[(String, String, String)],
+    selected: usize,
+    area: Rect,
+) {
+    let popup = centered_rect(70, 50, area);
+    f.render_widget(Clear, popup);
+
+    let block = Block::default()
+        .title(" Focus target (Enter=select, Esc=cancel) ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .style(Style::default().bg(Color::Rgb(25, 25, 25)));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    if inner.height < 2 || items.is_empty() {
+        let msg = Paragraph::new(Line::from(Span::styled(
+            " No focusable targets",
+            Style::default().fg(Color::DarkGray),
+        )));
+        f.render_widget(msg, inner);
+        return;
+    }
+
+    let header_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: 1,
+    };
+    let header = Paragraph::new(Line::from(Span::styled(
+        format!(" {:12}  {:30}  {}", "Kind", "Label", "ID"),
+        Style::default()
+            .fg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD),
+    )));
+    f.render_widget(header, header_area);
+
+    let list_area = Rect {
+        x: inner.x,
+        y: inner.y + 1,
+        width: inner.width,
+        height: inner.height.saturating_sub(1),
+    };
+
+    let visible = list_area.height as usize;
+    let scroll_offset = if selected >= visible {
+        selected - visible + 1
+    } else {
+        0
+    };
+
+    let lines: Vec<Line<'static>> = items
+        .iter()
+        .enumerate()
+        .skip(scroll_offset)
+        .take(visible)
+        .map(|(i, (id, label, kind))| {
+            let style = if i == selected {
+                Style::default().fg(Color::Black).bg(Color::Cyan)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            let label_trunc: String = label.chars().take(28).collect();
+            let kind_trunc: String = kind.chars().take(12).collect();
+            let id_trunc: String = id.chars().take(16).collect();
+            let text = format!(" {:12}  {:30}  {}", kind_trunc, label_trunc, id_trunc);
+            let truncated: String = text.chars().take(inner.width as usize).collect();
+            Line::from(Span::styled(truncated, style))
+        })
+        .collect();
+
+    f.render_widget(Paragraph::new(lines), list_area);
 }
 
 // ---------------------------------------------------------------------------

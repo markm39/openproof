@@ -772,7 +772,10 @@ async fn run_app(
         if event::poll(Duration::from_millis(16))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    if state.command_mode {
+                    if state.overlay.is_some() {
+                        // --- Overlay captures all input ---
+                        handle_overlay_key(key, state, &tx, &store);
+                    } else if state.command_mode {
                         // --- Command mode key handling ---
                         handle_command_mode_key(key, state, &tx, &store);
                     } else {
@@ -990,6 +993,104 @@ fn persist_verification_result(
             });
         }
     });
+}
+
+fn handle_overlay_key(
+    key: event::KeyEvent,
+    state: &mut AppState,
+    tx: &mpsc::UnboundedSender<AppEvent>,
+    store: &AppStore,
+) {
+    let Some(overlay) = state.overlay.take() else {
+        return;
+    };
+    match overlay {
+        openproof_core::Overlay::SessionPicker { mut selected } => match key.code {
+            KeyCode::Esc => {
+                // Close without action.
+            }
+            KeyCode::Up => {
+                selected = selected.saturating_sub(1);
+                state.overlay = Some(openproof_core::Overlay::SessionPicker { selected });
+            }
+            KeyCode::Down => {
+                if selected + 1 < state.sessions.len() {
+                    selected += 1;
+                }
+                state.overlay = Some(openproof_core::Overlay::SessionPicker { selected });
+            }
+            KeyCode::Enter => {
+                if let Some(session) = state.sessions.get(selected) {
+                    let id = session.id.clone();
+                    match state.switch_session(&id) {
+                        Ok(()) => {
+                            state.sync_question_selection();
+                        }
+                        Err(e) => {
+                            emit_local_notice(
+                                tx.clone(),
+                                state,
+                                store.clone(),
+                                "Resume Error",
+                                e,
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {
+                // Keep overlay open on unrecognized keys.
+                state.overlay = Some(openproof_core::Overlay::SessionPicker { selected });
+            }
+        },
+        openproof_core::Overlay::FocusPicker { items, mut selected } => match key.code {
+            KeyCode::Esc => {
+                // Close without action.
+            }
+            KeyCode::Up => {
+                selected = selected.saturating_sub(1);
+                state.overlay =
+                    Some(openproof_core::Overlay::FocusPicker { items, selected });
+            }
+            KeyCode::Down => {
+                if selected + 1 < items.len() {
+                    selected += 1;
+                }
+                state.overlay =
+                    Some(openproof_core::Overlay::FocusPicker { items, selected });
+            }
+            KeyCode::Enter => {
+                if let Some((id, _label, _kind)) = items.get(selected) {
+                    match state.focus_target(Some(id)) {
+                        Ok(Some(write)) => {
+                            persist_write(tx.clone(), store.clone(), write);
+                            emit_local_notice(
+                                tx.clone(),
+                                state,
+                                store.clone(),
+                                "Focus",
+                                format!("Focused {id}."),
+                            );
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            emit_local_notice(
+                                tx.clone(),
+                                state,
+                                store.clone(),
+                                "Focus Error",
+                                e,
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {
+                state.overlay =
+                    Some(openproof_core::Overlay::FocusPicker { items, selected });
+            }
+        },
+    }
 }
 
 fn handle_command_mode_key(
@@ -1789,53 +1890,86 @@ fn apply_local_command(
                 ),
             );
         }
-        "/resume" => match if arg_text.is_empty() {
-            Err("Usage: /resume <session-id>".to_string())
-        } else {
-            state.switch_session(arg_text)
-        } {
-            Ok(()) => emit_local_notice(
-                tx,
-                state,
-                store,
-                "Session",
-                format!(
-                    "Resumed {}.",
-                    state
-                        .current_session()
-                        .map(|session| session.title.clone())
-                        .unwrap_or_else(|| arg_text.to_string())
-                ),
-            ),
-            Err(error) => emit_local_notice(tx, state, store, "Session Error", error),
-        },
+        "/resume" => {
+            if arg_text.is_empty() {
+                // Open interactive session picker.
+                state.overlay = Some(openproof_core::Overlay::SessionPicker {
+                    selected: state.selected_session,
+                });
+            } else {
+                match state.switch_session(arg_text) {
+                    Ok(()) => emit_local_notice(
+                        tx,
+                        state,
+                        store,
+                        "Session",
+                        format!(
+                            "Resumed {}.",
+                            state
+                                .current_session()
+                                .map(|session| session.title.clone())
+                                .unwrap_or_else(|| arg_text.to_string())
+                        ),
+                    ),
+                    Err(error) => {
+                        emit_local_notice(tx, state, store, "Session Error", error)
+                    }
+                }
+            }
+        }
         "/nodes" => {
             emit_local_notice(tx, state, store, "Proof Nodes", state.proof_nodes_report());
         }
-        "/focus" => match state.focus_target(if arg_text.is_empty() || arg_text == "clear" {
-            None
-        } else {
-            Some(arg_text)
-        }) {
-            Ok(Some(write)) => {
-                persist_write(tx.clone(), store.clone(), write);
-                emit_local_notice(
-                    tx,
-                    state,
-                    store,
-                    "Focus",
-                    if arg_text.is_empty() || arg_text == "clear" {
-                        "Cleared active proof focus.".to_string()
-                    } else if arg_text.starts_with("branch_") {
-                        format!("Focused branch {arg_text}.")
-                    } else {
-                        format!("Focused proof node {arg_text}.")
-                    },
-                );
+        "/focus" => {
+            if arg_text.is_empty() {
+                // Open interactive focus picker.
+                let items = openproof_core::build_focus_items(state);
+                if items.is_empty() {
+                    emit_local_notice(
+                        tx,
+                        state,
+                        store,
+                        "Focus",
+                        "No focusable targets (no nodes or branches).".to_string(),
+                    );
+                } else {
+                    state.overlay = Some(openproof_core::Overlay::FocusPicker {
+                        items,
+                        selected: 0,
+                    });
+                }
+            } else if arg_text == "clear" {
+                match state.focus_target(None) {
+                    Ok(Some(write)) => {
+                        persist_write(tx.clone(), store.clone(), write);
+                        emit_local_notice(
+                            tx,
+                            state,
+                            store,
+                            "Focus",
+                            "Cleared active proof focus.".to_string(),
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(error) => emit_local_notice(tx, state, store, "Focus Error", error),
+                }
+            } else {
+                match state.focus_target(Some(arg_text)) {
+                    Ok(Some(write)) => {
+                        persist_write(tx.clone(), store.clone(), write);
+                        emit_local_notice(
+                            tx,
+                            state,
+                            store,
+                            "Focus",
+                            format!("Focused {arg_text}."),
+                        );
+                    }
+                    Ok(None) => {}
+                    Err(error) => emit_local_notice(tx, state, store, "Focus Error", error),
+                }
             }
-            Ok(None) => {}
-            Err(error) => emit_local_notice(tx, state, store, "Focus Error", error),
-        },
+        }
         "/agent" => {
             let parts = arg_text.split_whitespace().collect::<Vec<_>>();
             if parts.first().copied() != Some("spawn") || parts.len() < 3 {
@@ -2496,13 +2630,10 @@ fn apply_local_command(
             );
         }
         "/sessions" => {
-            let content = state
-                .sessions
-                .iter()
-                .map(|session| format!("{}  {}  {}", session.id, session.title, session.updated_at))
-                .collect::<Vec<_>>()
-                .join("\n");
-            emit_local_notice(tx, state, store, "Sessions", if content.is_empty() { "No sessions yet.".to_string() } else { content });
+            // Open interactive session picker.
+            state.overlay = Some(openproof_core::Overlay::SessionPicker {
+                selected: state.selected_session,
+            });
         }
         _ => {
             emit_local_notice(
