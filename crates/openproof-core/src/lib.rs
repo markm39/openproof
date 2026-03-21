@@ -770,6 +770,7 @@ impl AppState {
         self.sessions.insert(0, session.clone());
         self.selected_session = 0;
         self.scroll_offset = 0;
+        self.flushed_turn_count = 0;
         self.selected_question_option = 0;
         self.pending_writes += 1;
         self.status = format!("Started session {}.", session.title);
@@ -782,6 +783,7 @@ impl AppState {
         };
         self.selected_session = index;
         self.scroll_offset = 0;
+        self.flushed_turn_count = 0;
         self.sync_question_selection();
         let title = self.sessions[index].title.clone();
         self.status = format!("Resumed {title}.");

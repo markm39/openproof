@@ -714,7 +714,31 @@ async fn run_app(
     tx: mpsc::UnboundedSender<AppEvent>,
     rx: &mut mpsc::UnboundedReceiver<AppEvent>,
 ) -> Result<()> {
+    let mut last_session_id = state
+        .current_session()
+        .map(|s| s.id.clone())
+        .unwrap_or_default();
+
     loop {
+        // Detect session change -- clear scrollback and reset viewport.
+        let current_session_id = state
+            .current_session()
+            .map(|s| s.id.clone())
+            .unwrap_or_default();
+        if current_session_id != last_session_id {
+            last_session_id = current_session_id;
+            // Clear terminal scrollback and reset viewport to full screen.
+            let size = terminal.size()?;
+            terminal.set_viewport_area(ratatui::layout::Rect::new(
+                0, 0, size.width, size.height,
+            ));
+            let writer = terminal.backend_mut();
+            // Clear scrollback + visible screen.
+            write!(writer, "\x1b[r\x1b[0m\x1b[H\x1b[2J\x1b[3J\x1b[H")?;
+            io::Write::flush(writer)?;
+            terminal.clear()?;
+        }
+
         while let Ok(event) = rx.try_recv() {
             if matches!(event, AppEvent::AutonomousTick) {
                 schedule_autonomous_tick(tx.clone(), store.clone(), state);
