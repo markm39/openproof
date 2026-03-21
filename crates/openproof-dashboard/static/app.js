@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "https://esm.sh/react@18.3.1";
 import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
 import htm from "https://esm.sh/htm@3.1.1";
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position } from "https://esm.sh/@xyflow/react@12.6.0?bundle-deps&external=react,react-dom";
 
 const h = htm.bind(React.createElement);
 const POLL_MS = 2000;
@@ -175,194 +176,233 @@ function OverviewTab({ session }) {
   `;
 }
 
-// ── Graph Tab ───────────────────────────────────────────────────────────
+// ── Graph Tab (React Flow) ──────────────────────────────────────────────
+
+const statusColor = (s) => {
+  const st = String(s || "").toLowerCase();
+  if (st === "verified" || st === "done") return "#22c55e";
+  if (st === "proving" || st === "running") return "#eab308";
+  if (st === "failed" || st === "error" || st === "blocked") return "#ef4444";
+  return "#525252";
+};
+
+const roleColor = (r) => {
+  const role = String(r || "").toLowerCase();
+  if (role === "prover") return "#3b82f6";
+  if (role === "repairer") return "#f59e0b";
+  if (role === "planner") return "#8b5cf6";
+  if (role === "retriever") return "#06b6d4";
+  if (role === "critic") return "#ec4899";
+  return "#6b7280";
+};
+
+const kindIcon = (k) => {
+  const kind = String(k || "").toLowerCase();
+  if (kind === "theorem") return "\u{1D4AF}";
+  if (kind === "lemma") return "\u{2113}";
+  if (kind === "def" || kind === "artifact") return "\u{1D49F}";
+  if (kind === "axiom") return "\u{1D49C}";
+  return "\u25CB";
+};
+
+function ProofNodeComponent({ data }) {
+  const borderColor = statusColor(data.status);
+  return h`
+    <div style=${{
+      background: "#1a1a1a",
+      border: "2px solid " + borderColor,
+      borderRadius: 8,
+      padding: "8px 12px",
+      minWidth: 160,
+      maxWidth: 240,
+      fontFamily: "system-ui, sans-serif",
+    }}>
+      <${Handle} type="target" position=${Position.Top} style=${{ background: "#555" }} />
+      <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <span style=${{ fontSize: 14 }}>${kindIcon(data.kind)}</span>
+        <strong style=${{ color: "#e5e5e5", fontSize: 12 }}>${data.label}</strong>
+      </div>
+      <div style=${{ color: "#a3a3a3", fontSize: 10, marginBottom: 2 }}>
+        ${data.kind || "node"} \u00b7 ${data.status}
+      </div>
+      ${data.statement ? h`
+        <div style=${{ color: "#525252", fontSize: 9, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
+          ${data.statement}
+        </div>
+      ` : null}
+      <${Handle} type="source" position=${Position.Bottom} style=${{ background: "#555" }} />
+    </div>
+  `;
+}
+
+function BranchNodeComponent({ data }) {
+  const color = roleColor(data.role);
+  const hasSnippet = !!(data.lean_snippet || data.leanSnippet || "").trim();
+  return h`
+    <div style=${{
+      background: "#111",
+      border: "1.5px solid " + color,
+      borderRadius: 5,
+      padding: "6px 10px",
+      minWidth: 130,
+      opacity: hasSnippet ? 1 : 0.7,
+      fontFamily: "system-ui, sans-serif",
+    }}>
+      <${Handle} type="target" position=${Position.Top} style=${{ background: color }} />
+      <div style=${{ color, fontSize: 10, fontWeight: 600 }}>
+        ${data.role}${data.hidden ? " (hidden)" : ""}
+        ${hasSnippet ? h`<span style=${{ color: "#22c55e", marginLeft: 4 }}>\u25CF</span>` : null}
+      </div>
+      <div style=${{ color: "#737373", fontSize: 9 }}>
+        ${String(data.status || "idle")} \u00b7 score ${(data.score || 0).toFixed(0)} \u00b7 ${data.attempt_count || data.attemptCount || 0} tries
+      </div>
+      ${data.summary ? h`
+        <div style=${{ color: "#525252", fontSize: 8, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
+          ${data.summary}
+        </div>
+      ` : null}
+    </div>
+  `;
+}
+
+const nodeTypes = {
+  proofNode: ProofNodeComponent,
+  branchNode: BranchNodeComponent,
+};
 
 function GraphTab({ session }) {
   const proof = session?.proof;
-  const nodes = proof?.nodes || [];
+  const proofNodes = proof?.nodes || [];
   const branches = proof?.branches || [];
-  const agents = proof?.agents || [];
 
-  if (nodes.length === 0 && branches.length === 0) {
+  if (proofNodes.length === 0 && branches.length === 0) {
     return h`<div className="graph-container">No proof nodes to visualize</div>`;
   }
 
-  const statusColor = (s) => {
-    const st = String(s || "").toLowerCase();
-    if (st === "verified" || st === "done") return "#22c55e";
-    if (st === "proving" || st === "running") return "#eab308";
-    if (st === "failed" || st === "error" || st === "blocked") return "#ef4444";
-    return "#525252";
-  };
+  // Build React Flow nodes and edges
+  const { flowNodes, flowEdges } = useMemo(() => {
+    const nodes = [];
+    const edges = [];
 
-  const roleColor = (r) => {
-    const role = String(r || "").toLowerCase();
-    if (role === "prover") return "#3b82f6";
-    if (role === "repairer") return "#f59e0b";
-    if (role === "planner") return "#8b5cf6";
-    if (role === "retriever") return "#06b6d4";
-    if (role === "critic") return "#ec4899";
-    return "#6b7280";
-  };
+    // Group proof nodes by depth for layout
+    const byDepth = {};
+    for (const n of proofNodes) {
+      const d = n.depth || 0;
+      if (!byDepth[d]) byDepth[d] = [];
+      byDepth[d].push(n);
+    }
 
-  // Layout: tree structure based on parent_id / depth
-  const nodeW = 160;
-  const nodeH = 50;
-  const branchW = 140;
-  const branchH = 36;
-  const gapX = 20;
-  const gapY = 30;
-  const startX = 30;
-  const startY = 30;
+    // Position proof nodes in a tree
+    for (const n of proofNodes) {
+      const d = n.depth || 0;
+      const siblings = byDepth[d] || [];
+      const idx = siblings.indexOf(n);
+      const totalWidth = siblings.length * 220;
+      const startX = -(totalWidth / 2) + 110;
 
-  // Group nodes by depth for tree layout
-  const maxDepth = Math.max(0, ...nodes.map((n) => n.depth || 0));
-  const byDepth = {};
-  for (const n of nodes) {
-    const d = n.depth || 0;
-    if (!byDepth[d]) byDepth[d] = [];
-    byDepth[d].push(n);
-  }
+      nodes.push({
+        id: n.id,
+        type: "proofNode",
+        position: { x: startX + idx * 220, y: d * 100 },
+        data: n,
+      });
 
-  // Position nodes: each depth level is a row
-  const posNodes = nodes.map((n) => {
-    const d = n.depth || 0;
-    const siblings = byDepth[d] || [];
-    const idx = siblings.indexOf(n);
-    return {
-      ...n,
-      x: startX + idx * (nodeW + gapX),
-      y: startY + d * (nodeH + gapY),
-    };
-  });
+      // Parent edge
+      const parentId = n.parent_id || n.parentId;
+      if (parentId) {
+        edges.push({
+          id: "tree-" + n.id,
+          source: parentId,
+          target: n.id,
+          style: { stroke: "#3b82f6", strokeWidth: 2 },
+          animated: n.status === "proving",
+        });
+      }
 
-  // Position branches below the proof tree, grouped by focusNodeId
-  const treeBottom = startY + (maxDepth + 1) * (nodeH + gapY);
-  const posBranches = branches.map((b, i) => {
-    const parentNode = posNodes.find((n) =>
-      (b.focus_node_id || b.focusNodeId) === n.id
-    ) || posNodes[0];
-    const parentX = parentNode ? parentNode.x : startX;
-    const parentY = parentNode ? parentNode.y + nodeH : treeBottom;
-    const col = branches.filter((bb, j) =>
-      j < i && ((bb.focus_node_id || bb.focusNodeId || "") === (b.focus_node_id || b.focusNodeId || ""))
-    ).length;
-    return {
-      ...b,
-      x: parentX + col * (branchW + 10),
-      y: treeBottom + 10,
-      parentX: parentX + nodeW / 2,
-      parentY,
-    };
-  });
+      // Dependency edges
+      for (const depId of (n.depends_on || n.dependsOn || [])) {
+        edges.push({
+          id: "dep-" + n.id + "-" + depId,
+          source: depId,
+          target: n.id,
+          style: { stroke: "#6b7280", strokeWidth: 1, strokeDasharray: "4 3" },
+        });
+      }
+    }
 
-  const width = Math.max(700,
-    Math.max(
-      ...posNodes.map((n) => n.x + nodeW + 40),
-      ...posBranches.map((b) => b.x + branchW + 40)
-    )
-  );
-  const height = Math.max(300, startY + nodeH + gapY + 30 + branchH + 60);
+    // Position branches below the tree
+    const maxDepth = Math.max(0, ...proofNodes.map((n) => n.depth || 0));
+    const branchY = (maxDepth + 1) * 100 + 40;
+    const branchCols = {};
 
-  // Verification info
+    for (const b of branches) {
+      const focusId = b.focus_node_id || b.focusNodeId || proofNodes[0]?.id;
+      if (!branchCols[focusId]) branchCols[focusId] = 0;
+      const col = branchCols[focusId]++;
+
+      const parentNode = nodes.find((n) => n.id === focusId);
+      const baseX = parentNode ? parentNode.position.x : col * 160;
+
+      const bId = "branch-" + b.id;
+      nodes.push({
+        id: bId,
+        type: "branchNode",
+        position: { x: baseX + col * 160, y: branchY },
+        data: b,
+      });
+
+      if (focusId) {
+        edges.push({
+          id: "agent-" + b.id,
+          source: focusId,
+          target: bId,
+          style: { stroke: roleColor(b.role), strokeWidth: 1, strokeDasharray: "4 3", opacity: 0.5 },
+        });
+      }
+    }
+
+    return { flowNodes: nodes, flowEdges: edges };
+  }, [proofNodes, branches]);
+
   const verification = proof?.last_verification;
   const attemptNum = proof?.attempt_number || proof?.attemptNumber || 0;
-  const scratchPath = proof?.scratch_path || proof?.scratchPath || "";
 
   return h`
-    <div className="graph-canvas">
+    <div className="graph-canvas" style=${{ height: "100%", minHeight: 400 }}>
       <div className="graph-info">
         <span>Phase: <strong>${proof?.phase || "idle"}</strong></span>
-        <span>\u00a0\u00b7\u00a0 Nodes: ${nodes.length}</span>
+        <span>\u00a0\u00b7\u00a0 Nodes: ${proofNodes.length}</span>
         <span>\u00a0\u00b7\u00a0 Branches: ${branches.length}</span>
         <span>\u00a0\u00b7\u00a0 Attempts: ${attemptNum}</span>
-        ${scratchPath ? h`<span>\u00a0\u00b7\u00a0 <code style=${{fontSize:"10px"}}>${scratchPath}</code></span>` : null}
-      </div>
-      <svg width=${width} height=${height} xmlns="http://www.w3.org/2000/svg">
-        <!-- Parent-child edges in proof tree -->
-        ${posNodes.filter((n) => n.parent_id || n.parentId).map((n) => {
-          const parent = posNodes.find((p) => p.id === (n.parent_id || n.parentId));
-          if (!parent) return null;
-          return h`<line key=${"tree-" + n.id}
-            x1=${parent.x + nodeW / 2} y1=${parent.y + nodeH}
-            x2=${n.x + nodeW / 2} y2=${n.y}
-            stroke="#3b82f6" strokeWidth="2" />`;
-        })}
-        <!-- Dependency edges (dashed) -->
-        ${posNodes.flatMap((n) => (n.depends_on || n.dependsOn || []).map((depId) => {
-          const dep = posNodes.find((p) => p.id === depId);
-          if (!dep) return null;
-          return h`<line key=${"dep-" + n.id + "-" + depId}
-            x1=${dep.x + nodeW / 2} y1=${dep.y + nodeH}
-            x2=${n.x + nodeW / 2} y2=${n.y}
-            stroke="#6b7280" strokeWidth="1" strokeDasharray="4,3" />`;
-        }))}
-        <!-- Edges from nodes to agent branches -->
-        ${posBranches.map((b, i) => h`
-          <line key=${"edge" + i}
-            x1=${b.parentX} y1=${b.parentY}
-            x2=${b.x + branchW / 2} y2=${b.y}
-            stroke=${roleColor(b.role)} strokeWidth="1.5" strokeDasharray="4,3" opacity="0.4" />
-        `)}
-
-        <!-- Proof nodes (top row) -->
-        ${posNodes.map((n) => h`
-          <g key=${n.id}>
-            <rect x=${n.x} y=${n.y} width=${nodeW} height=${nodeH}
-              rx="8" fill="#1a1a1a" stroke=${statusColor(n.status)} strokeWidth="2.5" />
-            <text x=${n.x + nodeW / 2} y=${n.y + 18} textAnchor="middle"
-              fill="#e5e5e5" fontSize="12" fontWeight="700" fontFamily="system-ui">
-              ${n.label.length > 18 ? n.label.slice(0, 16) + ".." : n.label}
-            </text>
-            <text x=${n.x + nodeW / 2} y=${n.y + 33} textAnchor="middle"
-              fill="#a3a3a3" fontSize="10" fontFamily="system-ui">
-              ${n.kind || "node"} \u00b7 ${n.status}
-            </text>
-            <text x=${n.x + nodeW / 2} y=${n.y + 45} textAnchor="middle"
-              fill="#525252" fontSize="8" fontFamily="monospace">
-              ${(n.statement || "").slice(0, 30)}${(n.statement || "").length > 30 ? ".." : ""}
-            </text>
-          </g>
-        `)}
-
-        <!-- Branches (below nodes) -->
-        ${posBranches.map((b) => {
-          const hasSnippet = !!(b.lean_snippet || b.leanSnippet || "").trim();
-          return h`
-            <g key=${b.id}>
-              <rect x=${b.x} y=${b.y} width=${branchW} height=${branchH}
-                rx="5" fill="#111" stroke=${roleColor(b.role)} strokeWidth="1.5"
-                opacity=${hasSnippet ? 1 : 0.6} />
-              <text x=${b.x + branchW / 2} y=${b.y + 14} textAnchor="middle"
-                fill=${roleColor(b.role)} fontSize="9" fontWeight="600" fontFamily="system-ui">
-                ${b.role}${b.hidden ? " (hidden)" : ""}
-              </text>
-              <text x=${b.x + branchW / 2} y=${b.y + 26} textAnchor="middle"
-                fill="#737373" fontSize="8" fontFamily="system-ui">
-                ${String(b.status || "idle")} \u00b7 score ${(b.score || 0).toFixed(0)} \u00b7 ${b.attempt_count || b.attemptCount || 0} tries
-              </text>
-              ${hasSnippet ? h`
-                <circle cx=${b.x + branchW - 8} cy=${b.y + 8} r="4"
-                  fill="#22c55e" opacity="0.8" />
-              ` : null}
-            </g>
-          `;
-        })}
-
-        <!-- Verification result banner -->
         ${verification ? h`
-          <rect x=${startX} y=${height - 40} width=${width - 60} height="28"
-            rx="5" fill=${verification.ok ? "#052e16" : "#450a0a"}
-            stroke=${verification.ok ? "#22c55e" : "#ef4444"} strokeWidth="1" />
-          <text x=${startX + 12} y=${height - 22}
-            fill=${verification.ok ? "#86efac" : "#fca5a5"} fontSize="11" fontFamily="system-ui">
-            ${verification.ok ? "Lean verified" : "Lean failed"}: ${
-              verification.ok ? "Proof accepted"
-                : (verification.stderr || "").split("\\n")[0].slice(0, 80)
-            }
-          </text>
+          <span>\u00a0\u00b7\u00a0
+            <span style=${{ color: verification.ok ? "#22c55e" : "#ef4444" }}>
+              ${verification.ok ? "Lean verified" : "Lean failed"}
+            </span>
+          </span>
         ` : null}
-      </svg>
+      </div>
+      <div style=${{ width: "100%", height: "calc(100% - 40px)" }}>
+        <${ReactFlow}
+          nodes=${flowNodes}
+          edges=${flowEdges}
+          nodeTypes=${nodeTypes}
+          fitView
+          fitViewOptions=${{ padding: 0.3 }}
+          minZoom=${0.2}
+          maxZoom=${2}
+          defaultViewport=${{ x: 0, y: 0, zoom: 0.8 }}
+          proOptions=${{ hideAttribution: true }}
+          style=${{ background: "#0a0a0a" }}
+        >
+          <${Background} color="#222" gap=${20} />
+          <${Controls} position="bottom-right" />
+          <${MiniMap}
+            nodeColor=${(n) => n.type === "branchNode" ? roleColor(n.data?.role) : statusColor(n.data?.status)}
+            style=${{ background: "#111" }}
+          />
+        <//>
+      </div>
     </div>
   `;
 }
