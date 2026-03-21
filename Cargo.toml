@@ -10,7 +10,6 @@ members = [
   "crates/openproof-cli",
   "crates/openproof-cloud",
   "crates/openproof-corpus",
-  "crates/openproof-corpus-server",
 ]
 resolver = "2"
 
