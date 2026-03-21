@@ -2277,6 +2277,7 @@ fn build_system_prompt(session: Option<&SessionSnapshot>) -> String {
     let mut sections = vec![
         "You are openproof, a concise formal math assistant working in a persistent terminal session.".to_string(),
         "Keep momentum, be direct, and when a proof node is active prefer concrete Lean progress over exposition.".to_string(),
+        "When writing Lean 4 proofs: prefer well-known tactics (simp, omega, ring, norm_num, exact?, apply?, rw?) over guessing exact lemma names. If unsure of an exact Mathlib lemma name, use `exact?` or `apply?` to let Lean search at compile time. This avoids hallucinated lemma names that cause Unknown constant errors.".to_string(),
         "When formalizing or continuing a proof, prefer structured progress markers such as TITLE, PROBLEM, FORMAL_TARGET, ACCEPTED_TARGET, PHASE, STATUS, QUESTION, OPTION, OPTION_TARGET, RECOMMENDED_OPTION, THEOREM, LEMMA, PAPER, NEXT, and fenced ```lean``` blocks when relevant.".to_string(),
     ];
     if !prompt_context.instructions.trim().is_empty() {
