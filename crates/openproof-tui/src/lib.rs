@@ -245,30 +245,6 @@ fn draw_chat_area(f: &mut Frame<'_>, state: &mut AppState, area: Rect) {
         .wrap(Wrap { trim: false });
     f.render_widget(para, area);
 
-    // Scroll indicator when scrolled up
-    if state.scroll_offset > 0 {
-        let pct = if max_scroll > 0 {
-            100 * state.scroll_offset / max_scroll
-        } else {
-            100
-        };
-        let indicator = Line::from(Span::styled(
-            format!(
-                " Scroll: {}% ({}/{} lines) ",
-                pct, state.scroll_offset, max_scroll
-            ),
-            Style::default()
-                .fg(Color::Yellow)
-                .bg(Color::Rgb(40, 40, 40)),
-        ));
-        let indicator_area = Rect {
-            x: area.x,
-            y: area.y,
-            width: area.width,
-            height: 1,
-        };
-        f.render_widget(Paragraph::new(vec![indicator]), indicator_area);
-    }
 }
 
 // ---------------------------------------------------------------------------
