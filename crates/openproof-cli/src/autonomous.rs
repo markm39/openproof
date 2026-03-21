@@ -7,8 +7,9 @@
 //! `autonomous_headless.rs`.
 
 use crate::helpers::{
-    autonomous_stop_reason, best_hidden_branch, current_foreground_branch,
-    persist_current_session, persist_write, should_promote_hidden_branch,
+    autonomous_stop_reason, autonomous_stop_reason_with_mode, best_hidden_branch,
+    current_foreground_branch, persist_current_session, persist_write,
+    should_promote_hidden_branch,
 };
 use crate::turn_handling::{
     ensure_hidden_agent_branch, start_agent_branch_turn, start_branch_verification,
@@ -74,7 +75,7 @@ pub fn schedule_autonomous_tick(
     {
         return;
     }
-    if let Some(reason) = autonomous_stop_reason(&session) {
+    if let Some(reason) = autonomous_stop_reason_with_mode(&session, session.proof.full_autonomous) {
         if let Ok(write) = state.set_autonomous_run_state(AutonomousRunPatch {
             is_autonomous_running: Some(false),
             autonomous_pause_reason: Some(Some(reason.clone())),

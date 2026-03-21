@@ -214,6 +214,8 @@ pub struct ProofSessionState {
     pub pending_question: Option<ProofQuestionState>,
     pub awaiting_clarification: bool,
     pub is_autonomous_running: bool,
+    /// Full autonomous = never stop (except when all nodes verified or user interrupts).
+    pub full_autonomous: bool,
     pub autonomous_iteration_count: usize,
     pub autonomous_started_at: Option<String>,
     pub autonomous_last_progress_at: Option<String>,

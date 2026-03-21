@@ -19,6 +19,7 @@ pub(crate) fn default_proof_state() -> ProofSessionState {
         pending_question: None,
         awaiting_clarification: false,
         is_autonomous_running: false,
+        full_autonomous: false,
         autonomous_iteration_count: 0,
         autonomous_started_at: None,
         autonomous_last_progress_at: None,

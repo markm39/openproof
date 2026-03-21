@@ -178,22 +178,50 @@ pub fn should_promote_hidden_branch(
     !candidate_has_diag && current_has_diag
 }
 
+/// Check if the autonomous loop should stop.
+/// `full_autonomous` = true means never stop unless user interrupts or there's
+/// literally nothing to do. `false` = current behavior (stop on done/blocked/stall).
 pub fn autonomous_stop_reason(session: &SessionSnapshot) -> Option<String> {
+    autonomous_stop_reason_with_mode(session, false)
+}
+
+pub fn autonomous_stop_reason_with_mode(
+    session: &SessionSnapshot,
+    full_autonomous: bool,
+) -> Option<String> {
     use openproof_protocol::AgentStatus;
 
+    // Always stop for clarification questions -- need user input
     if session.proof.pending_question.is_some() || session.proof.awaiting_clarification {
-        return Some("Autonomous loop paused for clarification.".to_string());
+        return Some("Paused for clarification.".to_string());
     }
-    if session.proof.phase == "done" {
-        return Some("Autonomous loop completed the current proof run.".to_string());
-    }
-    if session.proof.phase == "blocked" {
-        return Some("Autonomous loop paused on a blocker.".to_string());
-    }
+
+    // Always need a target
     if session.proof.accepted_target.is_none() && session.proof.formal_target.is_none() {
         return Some(
             "Set or accept a formal target before running autonomous search.".to_string(),
         );
+    }
+
+    if full_autonomous {
+        // Full autonomous: only stop if ALL nodes are verified (proof complete)
+        let all_verified = !session.proof.nodes.is_empty()
+            && session.proof.nodes.iter().all(|n| {
+                n.status == openproof_protocol::ProofNodeStatus::Verified
+            });
+        if all_verified {
+            return Some("All proof nodes verified.".to_string());
+        }
+        // Never stop otherwise -- keep going
+        return None;
+    }
+
+    // Normal mode: stop on done/blocked/stall
+    if session.proof.phase == "done" {
+        return Some("Completed the current proof run.".to_string());
+    }
+    if session.proof.phase == "blocked" {
+        return Some("Paused on a blocker.".to_string());
     }
     let all_finished = !session.proof.branches.is_empty()
         && session
@@ -210,7 +238,7 @@ pub fn autonomous_stop_reason(session: &SessionSnapshot) -> Option<String> {
             )
         });
     if all_stalled {
-        return Some("Autonomous loop paused after low-progress iterations.".to_string());
+        return Some("Paused after low-progress iterations.".to_string());
     }
     None
 }

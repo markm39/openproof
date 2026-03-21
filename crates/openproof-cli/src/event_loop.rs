@@ -247,6 +247,26 @@ fn handle_normal_mode_key(
             }
         }
         KeyCode::Tab => Some(AppEvent::FocusNext),
+        KeyCode::BackTab => {
+            // Shift+Tab: cycle autonomous mode (off -> normal -> full -> off)
+            if let Some(session) = state.current_session_mut() {
+                let (new_running, new_full, label) = match (session.proof.is_autonomous_running, session.proof.full_autonomous) {
+                    (false, _) => (true, false, "autonomous on"),
+                    (true, false) => (true, true, "full autonomous on"),
+                    (true, true) => (false, false, "autonomous off"),
+                };
+                session.proof.is_autonomous_running = new_running;
+                session.proof.full_autonomous = new_full;
+                state.status = format!("{label} (shift+tab to cycle)");
+                if new_running {
+                    Some(AppEvent::AutonomousTick)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
         KeyCode::Esc if state.turn_in_flight => {
             // Abort current turn.
             state.turn_in_flight = false;

@@ -161,6 +161,43 @@ pub fn cmd_autonomous(
                 Err(error) => emit_local_notice(tx, state, store, "Autonomous Error", error),
             }
         }
+        "full" => {
+            // Full autonomous: never stops unless all nodes verified or user interrupts
+            if let Some(session) = state.current_session_mut() {
+                session.proof.full_autonomous = true;
+            }
+            let session = match state.current_session().cloned() {
+                Some(s) => s,
+                None => {
+                    emit_local_notice(tx, state, store, "Autonomous Error", "No active session.".to_string());
+                    return;
+                }
+            };
+            let now = chrono::Utc::now().to_rfc3339();
+            match state.set_autonomous_run_state(AutonomousRunPatch {
+                is_autonomous_running: Some(true),
+                autonomous_started_at: Some(Some(
+                    session.proof.autonomous_started_at.clone().unwrap_or(now.clone()),
+                )),
+                autonomous_last_progress_at: Some(
+                    session.proof.autonomous_last_progress_at.clone().or(Some(now)),
+                ),
+                autonomous_pause_reason: Some(None),
+                autonomous_stop_reason: Some(None),
+                ..AutonomousRunPatch::default()
+            }) {
+                Ok(write) => {
+                    persist_write(tx.clone(), store.clone(), write);
+                    let _ = tx.send(AppEvent::AutonomousTick);
+                    emit_local_notice(
+                        tx, state, store,
+                        "Autonomous",
+                        "Full autonomous mode: will keep going until all nodes are verified or you /autonomous stop.".to_string(),
+                    );
+                }
+                Err(error) => emit_local_notice(tx, state, store, "Autonomous Error", error),
+            }
+        }
         "stop" => match state.set_autonomous_run_state(AutonomousRunPatch {
             is_autonomous_running: Some(false),
             autonomous_pause_reason: Some(Some("Interrupted by user.".to_string())),

@@ -442,12 +442,19 @@ fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
         };
         Span::styled(activity, Style::default().fg(Color::Yellow))
     } else if is_autonomous {
+        let full = state.current_session()
+            .map(|s| s.proof.full_autonomous)
+            .unwrap_or(false);
+        let mode_label = if full { "full autonomous" } else { "autonomous" };
         Span::styled(
-            format!(" autonomous (iter {auto_iter}) | idle between steps"),
+            format!(" {mode_label} (iter {auto_iter}) | idle between steps (shift+tab to cycle)"),
             Style::default().fg(Color::Cyan),
         )
     } else {
-        Span::styled(" ".to_string(), Style::default().fg(Color::DarkGray))
+        Span::styled(
+            " (shift+tab to cycle mode)".to_string(),
+            Style::default().fg(Color::DarkGray),
+        )
     };
     let para =
         Paragraph::new(Line::from(text)).style(Style::default().bg(Color::Rgb(30, 30, 30)));
