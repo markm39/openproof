@@ -77,7 +77,11 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = disable_raw_mode();
-        let _ = crossterm::execute!(io::stderr(), crossterm::cursor::Show);
+        let _ = crossterm::execute!(
+            io::stderr(),
+            crossterm::event::DisableBracketedPaste,
+            crossterm::cursor::Show,
+        );
         let _ = write!(io::stderr(), "\x1b[r");
         original_hook(info);
     }));
@@ -85,6 +89,7 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     write!(stdout, "\x1b[r\x1b[0m\x1b[H\x1b[2J\x1b[3J\x1b[H")?;
+    crossterm::execute!(stdout, crossterm::event::EnableBracketedPaste)?;
     stdout.flush()?;
 
     let backend = CrosstermBackend::new(stdout);
@@ -92,6 +97,7 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
     let size = terminal.size()?;
     terminal.set_viewport_area(ratatui::layout::Rect::new(0, 0, size.width, size.height));
     let app_result = run_app(&mut terminal, store, &mut state, tx, &mut rx).await;
+    let _ = crossterm::execute!(terminal.backend_mut(), crossterm::event::DisableBracketedPaste);
     disable_raw_mode()?;
     terminal.show_cursor()?;
     terminal.clear()?;

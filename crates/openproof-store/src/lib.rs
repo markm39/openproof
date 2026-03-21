@@ -3,6 +3,7 @@ pub use rusqlite;
 mod corpus;
 mod corpus_seed;
 mod corpus_sync;
+pub mod embeddings;
 mod extract;
 mod schema;
 mod sessions;
