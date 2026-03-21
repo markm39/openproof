@@ -423,16 +423,28 @@ fn draw_input_area(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
 // ---------------------------------------------------------------------------
 
 fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: Rect) {
+    let is_autonomous = state.current_session()
+        .map(|s| s.proof.is_autonomous_running)
+        .unwrap_or(false);
+    let auto_iter = state.current_session()
+        .map(|s| s.proof.autonomous_iteration_count)
+        .unwrap_or(0);
+
     let text = if state.turn_in_flight || state.verification_in_flight {
-        let activity = match (state.turn_in_flight, state.verification_in_flight) {
-            (true, true) => "working + verifying...",
-            (true, false) => "working...",
-            (false, true) => "verifying...",
-            _ => "",
+        let activity = match (state.turn_in_flight, state.verification_in_flight, is_autonomous) {
+            (true, true, true) => format!(" autonomous (iter {auto_iter}) | working + verifying..."),
+            (true, false, true) => format!(" autonomous (iter {auto_iter}) | working..."),
+            (false, true, true) => format!(" autonomous (iter {auto_iter}) | verifying..."),
+            (true, true, false) => " working + verifying...".to_string(),
+            (true, false, false) => " working...".to_string(),
+            (false, true, false) => " verifying...".to_string(),
+            _ => String::new(),
         };
+        Span::styled(activity, Style::default().fg(Color::Yellow))
+    } else if is_autonomous {
         Span::styled(
-            format!(" {activity}"),
-            Style::default().fg(Color::Yellow),
+            format!(" autonomous (iter {auto_iter}) | idle between steps"),
+            Style::default().fg(Color::Cyan),
         )
     } else {
         Span::styled(" ".to_string(), Style::default().fg(Color::DarkGray))
