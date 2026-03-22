@@ -21,7 +21,6 @@ openproof is an open-source conversational theorem prover. Describe a mathematic
 - **Live dashboard** -- web dashboard with proof node graph and compiled PDF paper
 - **Verified corpus** -- growing searchable library of proven lemmas, retrieved automatically for future proofs
 - **Bring your own compute** -- works with your existing model subscriptions (ChatGPT, OpenAI API, Anthropic)
-- **Local-first** -- sessions, proofs, and corpus stored locally in SQLite
 
 ## Quick start
 
@@ -74,15 +73,6 @@ Type a math problem or theorem statement to start. openproof parses it, formaliz
 | `/corpus ingest` | Import Mathlib declarations into corpus |
 | `/export paper` | Export proof as LaTeX paper |
 
-### Keyboard shortcuts
-
-| Key | Action |
-|-----|--------|
-| Up/Down | Browse input history |
-| Esc | Abort current turn / clear input |
-| Ctrl+C | Clear input (first), quit (second) |
-| `/` | Enter command mode (with tab completion) |
-| PageUp/PageDown | Scroll through conversation |
 
 ## Corpus
 
@@ -92,20 +82,6 @@ openproof maintains a verified corpus -- a searchable database of proven Lean de
 
 **Local mode**: Corpus stays on your machine. Mathlib declarations are auto-imported on setup. No network calls.
 
-## Architecture
-
-| Crate | Purpose |
-|-------|---------|
-| `openproof-cli` | Binary: TUI shell, commands, setup wizard |
-| `openproof-tui` | Terminal rendering (ratatui) with inline viewport |
-| `openproof-core` | Application state machine and event handling |
-| `openproof-store` | SQLite persistence (sessions, corpus, sync) |
-| `openproof-protocol` | Shared types (serde-serializable) |
-| `openproof-model` | LLM API integration |
-| `openproof-lean` | Lean toolchain interaction and verification |
-| `openproof-dashboard` | Web dashboard server (Axum) |
-| `openproof-cloud` | Remote corpus API client |
-| `openproof-corpus` | Corpus orchestration (ingestion, search) |
 
 ## Contributing
 
