@@ -193,3 +193,23 @@ pub async fn run_recluster_corpus() -> Result<()> {
     println!("{}", serde_json::to_string_pretty(&summary)?);
     Ok(())
 }
+
+pub async fn run_ingest_corpus() -> Result<()> {
+    let store = AppStore::open(StorePaths::detect()?)?;
+    let lean_root = crate::helpers::resolve_lean_project_dir();
+    eprintln!("Ingesting library seeds from {}...", lean_root.display());
+    let results = tokio::task::spawn_blocking(move || {
+        store.ingest_default_library_seeds(&lean_root)
+    }).await??;
+    if results.is_empty() {
+        eprintln!("No library seed packages found.");
+    } else {
+        for (pkg, count) in &results {
+            eprintln!("{pkg}: {count} declarations");
+        }
+    }
+    let store2 = AppStore::open(StorePaths::detect()?)?;
+    let summary = store2.get_corpus_summary()?;
+    println!("{}", serde_json::to_string_pretty(&summary)?);
+    Ok(())
+}

@@ -13,7 +13,11 @@ use crate::store::AppStore;
 // ---------------------------------------------------------------------------
 
 pub(crate) fn next_store_id(prefix: &str) -> String {
-    format!("{prefix}_{}", Utc::now().timestamp_millis())
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let ts = Utc::now().timestamp_millis();
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("{prefix}_{ts}_{seq}")
 }
 
 pub(crate) fn stable_hash(input: &str) -> String {

@@ -206,9 +206,7 @@ pub fn cmd_corpus(
             );
             let tx_ingest = tx.clone();
             let store_ingest = store.clone();
-            let lean_root = env::current_dir()
-                .unwrap_or_else(|_| PathBuf::from("."))
-                .join("lean");
+            let lean_root = crate::helpers::resolve_lean_project_dir();
             tokio::spawn(async move {
                 let outcome = tokio::task::spawn_blocking(move || {
                     store_ingest.ingest_default_library_seeds(&lean_root)

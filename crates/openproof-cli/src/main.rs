@@ -13,7 +13,7 @@ mod system_prompt;
 mod turn_handling;
 
 use anyhow::{bail, Result};
-use shell::{run_ask, run_dashboard, run_health, run_login, run_recluster_corpus, run_shell};
+use shell::{run_ask, run_dashboard, run_health, run_ingest_corpus, run_login, run_recluster_corpus, run_shell};
 use std::{env, path::PathBuf};
 
 enum Command {
@@ -24,6 +24,7 @@ enum Command {
     Run { problem: String, label: Option<String> },
     Dashboard { open: bool, port: Option<u16> },
     ReclusterCorpus,
+    IngestCorpus,
     Help,
 }
 
@@ -48,6 +49,7 @@ async fn main() -> Result<()> {
         }
         Command::Dashboard { open, port } => run_dashboard(options.launch_cwd, open, port).await,
         Command::ReclusterCorpus => run_recluster_corpus().await,
+        Command::IngestCorpus => run_ingest_corpus().await,
         Command::Shell => {
             if !setup::is_setup_complete() {
                 match setup::run_wizard()? {
@@ -111,6 +113,13 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
     {
         return Ok(CliOptions {
             command: Command::ReclusterCorpus,
+            launch_cwd,
+        });
+    }
+
+    if args.first().map(String::as_str) == Some("ingest") {
+        return Ok(CliOptions {
+            command: Command::IngestCorpus,
             launch_cwd,
         });
     }
