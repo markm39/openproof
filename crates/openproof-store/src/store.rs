@@ -149,4 +149,98 @@ impl AppStore {
         files.sort();
         files
     }
+
+    /// Get the workspace directory path for a session (without creating it).
+    pub fn workspace_dir(&self, session_id: &str) -> PathBuf {
+        self.paths.sessions_dir.join(session_id)
+    }
+
+    /// List all files in the session workspace directory.
+    /// Returns (relative_path, size_in_bytes) pairs.
+    pub fn list_workspace_files(&self, session_id: &str) -> Result<Vec<(String, u64)>> {
+        let dir = self.workspace_dir(session_id);
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut files = Vec::new();
+        Self::walk_workspace(&dir, &dir, &mut files)?;
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(files)
+    }
+
+    fn walk_workspace(
+        base: &Path,
+        current: &Path,
+        out: &mut Vec<(String, u64)>,
+    ) -> Result<()> {
+        let entries = fs::read_dir(current)
+            .with_context(|| format!("reading workspace dir {}", current.display()))?;
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            // Skip the history directory.
+            if path.is_dir() {
+                if path.file_name().map(|n| n == "history").unwrap_or(false) {
+                    continue;
+                }
+                Self::walk_workspace(base, &path, out)?;
+            } else {
+                let relative = path
+                    .strip_prefix(base)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .to_string();
+                let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+                out.push((relative, size));
+            }
+        }
+        Ok(())
+    }
+
+    /// Read a file from the session workspace.
+    /// Returns an error if the path escapes the workspace directory.
+    pub fn read_workspace_file(&self, session_id: &str, relative_path: &str) -> Result<String> {
+        let dir = self.workspace_dir(session_id);
+        let target = sanitize_workspace_path(&dir, relative_path)?;
+        fs::read_to_string(&target)
+            .with_context(|| format!("reading workspace file {}", target.display()))
+    }
+
+    /// Write a file to the session workspace.
+    /// Creates parent directories as needed.
+    /// Returns an error if the path escapes the workspace directory.
+    pub fn write_workspace_file(
+        &self,
+        session_id: &str,
+        relative_path: &str,
+        content: &str,
+    ) -> Result<PathBuf> {
+        let dir = self.session_dir(session_id)?;
+        let target = sanitize_workspace_path(&dir, relative_path)?;
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("creating parent dirs for {}", target.display()))?;
+        }
+        fs::write(&target, content)
+            .with_context(|| format!("writing workspace file {}", target.display()))?;
+        Ok(target)
+    }
+}
+
+/// Validate that a relative path stays within the workspace directory.
+/// Rejects absolute paths and `..` traversal.
+fn sanitize_workspace_path(workspace_dir: &Path, relative_path: &str) -> Result<PathBuf> {
+    let relative = Path::new(relative_path);
+    anyhow::ensure!(
+        relative.is_relative(),
+        "workspace path must be relative, got: {relative_path}"
+    );
+    // Reject any component that is ".."
+    for component in relative.components() {
+        if matches!(component, std::path::Component::ParentDir) {
+            anyhow::bail!("workspace path must not contain '..': {relative_path}");
+        }
+    }
+    let target = workspace_dir.join(relative);
+    Ok(target)
 }

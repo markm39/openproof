@@ -1,3 +1,5 @@
+pub mod tools;
+
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use directories::BaseDirs;
@@ -192,10 +194,31 @@ pub struct CodexTurnRequest<'a> {
     pub reasoning_effort: &'a str,
 }
 
+/// A message in the conversation sent to the model.
 #[derive(Debug, Clone)]
-pub struct TurnMessage {
-    pub role: String,
-    pub content: String,
+pub enum TurnMessage {
+    /// A regular chat message (user, assistant, system/developer).
+    Chat { role: String, content: String },
+    /// A tool result returned after executing a tool call.
+    ToolResult { call_id: String, output: String },
+}
+
+impl TurnMessage {
+    /// Convenience constructor for chat messages (backward compatible).
+    pub fn chat(role: impl Into<String>, content: impl Into<String>) -> Self {
+        Self::Chat {
+            role: role.into(),
+            content: content.into(),
+        }
+    }
+
+    /// Convenience constructor for tool results.
+    pub fn tool_result(call_id: impl Into<String>, output: impl Into<String>) -> Self {
+        Self::ToolResult {
+            call_id: call_id.into(),
+            output: output.into(),
+        }
+    }
 }
 
 pub async fn run_codex_turn(request: CodexTurnRequest<'_>) -> Result<String> {
@@ -262,6 +285,8 @@ pub async fn run_codex_turn(request: CodexTurnRequest<'_>) -> Result<String> {
 }
 
 fn build_turn_payload(request: &CodexTurnRequest<'_>) -> Value {
+    let mut all_tools: Vec<Value> = vec![json!({ "type": "web_search" })];
+    all_tools.extend(tools::tool_definitions());
     json!({
         "model": request.model,
         "store": false,
@@ -270,7 +295,7 @@ fn build_turn_payload(request: &CodexTurnRequest<'_>) -> Value {
         "input": request.messages.iter().map(serialize_turn_message).collect::<Vec<_>>(),
         "include": ["reasoning.encrypted_content"],
         "tool_choice": "auto",
-        "tools": [{ "type": "web_search" }],
+        "tools": all_tools,
         "reasoning": {
             "effort": request.reasoning_effort
         }
@@ -278,19 +303,30 @@ fn build_turn_payload(request: &CodexTurnRequest<'_>) -> Value {
 }
 
 fn serialize_turn_message(message: &TurnMessage) -> Value {
-    if message.role == "assistant" {
-        json!({
-            "role": "assistant",
-            "content": message.content
-        })
-    } else {
-        json!({
-            "role": if message.role == "system" { "developer" } else { &message.role },
-            "content": [{
-                "type": "input_text",
-                "text": message.content
-            }]
-        })
+    match message {
+        TurnMessage::Chat { role, content } => {
+            if role == "assistant" {
+                json!({
+                    "role": "assistant",
+                    "content": content
+                })
+            } else {
+                json!({
+                    "role": if role == "system" { "developer" } else { role.as_str() },
+                    "content": [{
+                        "type": "input_text",
+                        "text": content
+                    }]
+                })
+            }
+        }
+        TurnMessage::ToolResult { call_id, output } => {
+            json!({
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": output
+            })
+        }
     }
 }
 
@@ -366,36 +402,60 @@ pub async fn run_codex_turn_streaming(
 }
 
 async fn read_event_stream(response: reqwest::Response) -> Result<String> {
-    read_event_stream_with_callback(response, |_| {}).await
+    let result = read_event_stream_with_events(response, |_| {}).await?;
+    Ok(result.text)
 }
 
-/// Status updates sent during reasoning phase.
+/// A tool call extracted from the model's response.
+#[derive(Debug, Clone)]
+pub struct ToolCall {
+    pub call_id: String,
+    pub name: String,
+    /// JSON-encoded arguments string.
+    pub arguments: String,
+}
+
+/// Combined result of a model turn: accumulated text plus any tool calls.
+#[derive(Debug, Clone, Default)]
+pub struct TurnResult {
+    pub text: String,
+    pub tool_calls: Vec<ToolCall>,
+}
+
+/// Status updates sent during streaming.
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     /// A text delta from the model's visible output.
     TextDelta(String),
-    /// The model is reasoning (thinking). The bool indicates if this is
-    /// a new reasoning event (true) or a continuation (false).
+    /// The model is reasoning (thinking).
     Reasoning,
+    /// A tool call has started (output item added).
+    ToolCallStart { call_id: String, name: String },
+    /// Streaming arguments delta for an in-progress tool call.
+    ToolCallArgsDelta { call_id: String, delta: String },
+    /// A tool call is complete with its full arguments.
+    ToolCallDone { call_id: String, name: String, arguments: String },
 }
 
 async fn read_event_stream_with_callback(
     response: reqwest::Response,
     on_delta: impl Fn(&str),
 ) -> Result<String> {
-    read_event_stream_with_events(response, |event| {
+    let result = read_event_stream_with_events(response, |event| {
         if let StreamEvent::TextDelta(ref delta) = event {
             on_delta(delta);
         }
     })
-    .await
+    .await?;
+    Ok(result.text)
 }
 
-/// Like run_codex_turn_streaming but also reports reasoning events.
+/// Like run_codex_turn_streaming but also reports reasoning and tool call events.
+/// Returns a `TurnResult` with both accumulated text and any tool calls.
 pub async fn run_codex_turn_with_events(
     request: CodexTurnRequest<'_>,
     on_event: impl Fn(StreamEvent) + Send + 'static,
-) -> Result<String> {
+) -> Result<TurnResult> {
     let auth = load_auth_state()?
         .filter(|state| state.auth_mode.as_deref() == Some("chatgpt"))
         .context("Openproof is not authenticated. Run `openproof login`.")?;
@@ -454,12 +514,17 @@ pub async fn run_codex_turn_with_events(
 async fn read_event_stream_with_events(
     response: reqwest::Response,
     on_event: impl Fn(StreamEvent),
-) -> Result<String> {
+) -> Result<TurnResult> {
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
     let mut full_text = String::new();
     let mut completed_response: Option<Value> = None;
     let mut reasoning_signaled = false;
+
+    // Track in-progress tool calls by their output_index.
+    let mut pending_calls: std::collections::HashMap<u64, (String, String, String)> =
+        std::collections::HashMap::new(); // output_index -> (call_id, name, args_buffer)
+    let mut finished_calls: Vec<ToolCall> = Vec::new();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
@@ -481,12 +546,63 @@ async fn read_event_stream_with_events(
                     on_event(StreamEvent::Reasoning);
                 }
 
+                // Text output delta
                 if let Some(delta) = event.get("delta").and_then(Value::as_str).filter(|_| {
                     event_type == "response.output_text.delta"
                 }) {
                     full_text.push_str(delta);
                     on_event(StreamEvent::TextDelta(delta.to_string()));
                 }
+
+                // Tool call: new output item of type function_call
+                if event_type == "response.output_item.added" {
+                    if let Some(item) = event.get("item") {
+                        let item_type = item.get("type").and_then(Value::as_str).unwrap_or("");
+                        if item_type == "function_call" {
+                            let call_id = item.get("call_id").and_then(Value::as_str).unwrap_or("").to_string();
+                            let name = item.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+                            let output_index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
+                            pending_calls.insert(output_index, (call_id.clone(), name.clone(), String::new()));
+                            on_event(StreamEvent::ToolCallStart { call_id, name });
+                        }
+                    }
+                }
+
+                // Tool call: streaming argument deltas
+                if event_type == "response.function_call_arguments.delta" {
+                    let output_index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
+                    let delta = event.get("delta").and_then(Value::as_str).unwrap_or("");
+                    if let Some(entry) = pending_calls.get_mut(&output_index) {
+                        entry.2.push_str(delta);
+                        on_event(StreamEvent::ToolCallArgsDelta {
+                            call_id: entry.0.clone(),
+                            delta: delta.to_string(),
+                        });
+                    }
+                }
+
+                // Tool call: arguments complete
+                if event_type == "response.function_call_arguments.done" {
+                    let output_index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
+                    if let Some((call_id, name, args)) = pending_calls.remove(&output_index) {
+                        let final_args = event
+                            .get("arguments")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .unwrap_or(args);
+                        on_event(StreamEvent::ToolCallDone {
+                            call_id: call_id.clone(),
+                            name: name.clone(),
+                            arguments: final_args.clone(),
+                        });
+                        finished_calls.push(ToolCall {
+                            call_id,
+                            name,
+                            arguments: final_args,
+                        });
+                    }
+                }
+
                 if matches!(event_type, "response.completed" | "response.done") {
                     if let Some(response_value) = event.get("response") {
                         completed_response = Some(response_value.clone());
@@ -496,13 +612,19 @@ async fn read_event_stream_with_events(
         }
     }
 
-    if full_text.trim().is_empty() {
-        if let Some(value) = completed_response {
-            return Ok(extract_message_text(&value));
+    // If we got no streamed text but have a completed response, extract text from it.
+    // Also extract any tool calls from the completed response if we missed them in streaming.
+    if full_text.trim().is_empty() && finished_calls.is_empty() {
+        if let Some(ref value) = completed_response {
+            full_text = extract_message_text(value);
+            finished_calls = extract_tool_calls(value);
         }
     }
 
-    Ok(full_text)
+    Ok(TurnResult {
+        text: full_text,
+        tool_calls: finished_calls,
+    })
 }
 
 fn parse_sse_event(chunk: &str) -> Option<Value> {
@@ -541,6 +663,24 @@ fn extract_message_text(value: &Value) -> String {
         }
     }
     String::new()
+}
+
+/// Extract tool calls from a completed response object (fallback for non-streamed responses).
+fn extract_tool_calls(value: &Value) -> Vec<ToolCall> {
+    let Some(output) = value.get("output").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    let mut calls = Vec::new();
+    for item in output {
+        let item_type = item.get("type").and_then(Value::as_str).unwrap_or("");
+        if item_type == "function_call" {
+            let call_id = item.get("call_id").and_then(Value::as_str).unwrap_or("").to_string();
+            let name = item.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+            let arguments = item.get("arguments").and_then(Value::as_str).unwrap_or("{}").to_string();
+            calls.push(ToolCall { call_id, name, arguments });
+        }
+    }
+    calls
 }
 
 fn parse_jwt_payload(token: &str) -> Option<Value> {

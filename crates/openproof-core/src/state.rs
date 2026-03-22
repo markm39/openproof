@@ -80,6 +80,18 @@ pub enum AppEvent {
     },
     AutonomousTick,
     AppendNotice { title: String, content: String },
+    ToolCallReceived {
+        call_id: String,
+        tool_name: String,
+        arguments: String,
+    },
+    ToolResultReceived {
+        call_id: String,
+        tool_name: String,
+        success: bool,
+        output: String,
+    },
+    ToolLoopIteration(usize),
     FocusNext,
     ToggleProofPane,
     SelectPrevQuestionOption,
@@ -155,6 +167,12 @@ pub struct AppState {
     pub history_index: Option<usize>,
     /// Draft input saved when entering history browse mode.
     pub input_draft: String,
+    /// Whether the tool loop is currently active (executing tool calls).
+    pub tool_loop_active: bool,
+    /// Current iteration in the tool loop.
+    pub tool_loop_iteration: usize,
+    /// Name of the tool currently being executed (for status bar).
+    pub current_tool_name: Option<String>,
 }
 
 impl AppState {
@@ -202,6 +220,9 @@ impl AppState {
             input_history: Vec::new(),
             history_index: None,
             input_draft: String::new(),
+            tool_loop_active: false,
+            tool_loop_iteration: 0,
+            current_tool_name: None,
         }
     }
 }

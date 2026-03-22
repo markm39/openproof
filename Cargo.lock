@@ -1303,6 +1303,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "openproof-protocol",
+ "serde_json",
 ]
 
 [[package]]

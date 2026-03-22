@@ -436,4 +436,58 @@ impl AppState {
         }
         None
     }
+
+    pub(crate) fn apply_tool_call_received(
+        &mut self,
+        _call_id: String,
+        tool_name: String,
+        arguments: String,
+    ) -> Option<PendingWrite> {
+        self.tool_loop_active = true;
+        self.current_tool_name = Some(tool_name.clone());
+        let entry = TranscriptEntry {
+            id: next_id("tool_call"),
+            role: MessageRole::ToolCall,
+            title: Some(tool_name),
+            content: arguments,
+            created_at: Utc::now().to_rfc3339(),
+        };
+        if let Some(snapshot) = self.current_session_mut().map(|session| {
+            session.updated_at = entry.created_at.clone();
+            session.transcript.push(entry);
+            session.clone()
+        }) {
+            self.pending_writes += 1;
+            return Some(PendingWrite { session: snapshot });
+        }
+        None
+    }
+
+    pub(crate) fn apply_tool_result_received(
+        &mut self,
+        _call_id: String,
+        tool_name: String,
+        success: bool,
+        output: String,
+    ) -> Option<PendingWrite> {
+        self.current_tool_name = None;
+        let status_word = if success { "ok" } else { "failed" };
+        self.status = format!("Tool {tool_name}: {status_word}");
+        let entry = TranscriptEntry {
+            id: next_id("tool_result"),
+            role: MessageRole::ToolResult,
+            title: Some(tool_name),
+            content: output,
+            created_at: Utc::now().to_rfc3339(),
+        };
+        if let Some(snapshot) = self.current_session_mut().map(|session| {
+            session.updated_at = entry.created_at.clone();
+            session.transcript.push(entry);
+            session.clone()
+        }) {
+            self.pending_writes += 1;
+            return Some(PendingWrite { session: snapshot });
+        }
+        None
+    }
 }

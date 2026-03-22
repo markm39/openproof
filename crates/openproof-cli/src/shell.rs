@@ -151,14 +151,8 @@ pub async fn run_ask(prompt: String) -> Result<()> {
     let response = run_codex_turn(CodexTurnRequest {
         session_id: &session_id,
         messages: &[
-            TurnMessage {
-                role: "system".to_string(),
-                content: "You are openproof, a concise formal math assistant.".to_string(),
-            },
-            TurnMessage {
-                role: "user".to_string(),
-                content: prompt,
-            },
+            TurnMessage::chat("system", "You are openproof, a concise formal math assistant."),
+            TurnMessage::chat("user", prompt),
         ],
         model: "gpt-5.4",
         reasoning_effort: "high",

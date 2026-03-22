@@ -43,6 +43,9 @@ impl AppState {
         }
         self.turn_in_flight = false;
         self.turn_started_at = None;
+        self.tool_loop_active = false;
+        self.tool_loop_iteration = 0;
+        self.current_tool_name = None;
         if !self.verification_in_flight {
             self.status = "Ready.".to_string();
         }

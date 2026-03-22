@@ -119,6 +119,48 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
             let cleaned = strip_markers(&entry.content);
             lines.extend(markdown::render_markdown(&cleaned, Style::default()));
         }
+        openproof_protocol::MessageRole::ToolCall => {
+            let tool_name = entry.title.as_deref().unwrap_or("tool");
+            // Summarize arguments (show first ~100 chars).
+            let args_summary = if entry.content.len() > 100 {
+                format!("{}...", &entry.content[..100])
+            } else {
+                entry.content.clone()
+            };
+            lines.push(Line::from(vec![
+                Span::styled(">> ", Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM)),
+                Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan)),
+                Span::styled(
+                    format!("({args_summary})"),
+                    Style::default().fg(Color::DarkGray),
+                ),
+            ]));
+        }
+        openproof_protocol::MessageRole::ToolResult => {
+            let tool_name = entry.title.as_deref().unwrap_or("tool");
+            // Show first ~10 lines of output.
+            let output_lines: Vec<&str> = entry.content.lines().take(10).collect();
+            let truncated = output_lines.len() < entry.content.lines().count();
+            lines.push(Line::from(vec![
+                Span::styled("<< ", Style::default().fg(Color::Green).add_modifier(Modifier::DIM)),
+                Span::styled(
+                    format!("{tool_name}: "),
+                    Style::default().fg(Color::Green).add_modifier(Modifier::DIM),
+                ),
+            ]));
+            for ol in &output_lines {
+                lines.push(Line::from(Span::styled(
+                    format!("   {ol}"),
+                    Style::default().fg(Color::DarkGray),
+                )));
+            }
+            if truncated {
+                lines.push(Line::from(Span::styled(
+                    "   ... (output truncated)".to_string(),
+                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                )));
+            }
+        }
         _ => {
             for content_line in entry.content.lines() {
                 lines.push(Line::from(Span::styled(
@@ -265,6 +307,46 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
                                     &cleaned,
                                     Style::default(),
                                 ));
+                            }
+                            openproof_protocol::MessageRole::ToolCall => {
+                                let tool_name = entry.title.as_deref().unwrap_or("tool");
+                                let args_summary = if entry.content.len() > 100 {
+                                    format!("{}...", &entry.content[..100])
+                                } else {
+                                    entry.content.clone()
+                                };
+                                lines.push(Line::from(vec![
+                                    Span::styled(">> ", Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM)),
+                                    Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan)),
+                                    Span::styled(
+                                        format!("({args_summary})"),
+                                        Style::default().fg(Color::DarkGray),
+                                    ),
+                                ]));
+                            }
+                            openproof_protocol::MessageRole::ToolResult => {
+                                let tool_name = entry.title.as_deref().unwrap_or("tool");
+                                let output_lines: Vec<&str> = entry.content.lines().take(10).collect();
+                                let truncated = output_lines.len() < entry.content.lines().count();
+                                lines.push(Line::from(vec![
+                                    Span::styled("<< ", Style::default().fg(Color::Green).add_modifier(Modifier::DIM)),
+                                    Span::styled(
+                                        format!("{tool_name}: "),
+                                        Style::default().fg(Color::Green).add_modifier(Modifier::DIM),
+                                    ),
+                                ]));
+                                for ol in &output_lines {
+                                    lines.push(Line::from(Span::styled(
+                                        format!("   {ol}"),
+                                        Style::default().fg(Color::DarkGray),
+                                    )));
+                                }
+                                if truncated {
+                                    lines.push(Line::from(Span::styled(
+                                        "   ... (output truncated)".to_string(),
+                                        Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                                    )));
+                                }
                             }
                             _ => {
                                 // System/Notice: dim text, no label
@@ -431,12 +513,21 @@ fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
         .unwrap_or(0);
 
     let text = if state.turn_in_flight || state.verification_in_flight {
+        let tool_info = if state.tool_loop_active {
+            if let Some(ref name) = state.current_tool_name {
+                format!(" | tool: {name} (iter {}/{})", state.tool_loop_iteration + 1, 25)
+            } else {
+                format!(" | tool loop (iter {}/{})", state.tool_loop_iteration + 1, 25)
+            }
+        } else {
+            String::new()
+        };
         let activity = match (state.turn_in_flight, state.verification_in_flight, is_autonomous) {
-            (true, true, true) => format!(" autonomous (iter {auto_iter}) | working + verifying..."),
-            (true, false, true) => format!(" autonomous (iter {auto_iter}) | working..."),
+            (true, true, true) => format!(" autonomous (iter {auto_iter}) | working + verifying...{tool_info}"),
+            (true, false, true) => format!(" autonomous (iter {auto_iter}) | working...{tool_info}"),
             (false, true, true) => format!(" autonomous (iter {auto_iter}) | verifying..."),
-            (true, true, false) => " working + verifying...".to_string(),
-            (true, false, false) => " working...".to_string(),
+            (true, true, false) => format!(" working + verifying...{tool_info}"),
+            (true, false, false) => format!(" working...{tool_info}"),
             (false, true, false) => " verifying...".to_string(),
             _ => String::new(),
         };

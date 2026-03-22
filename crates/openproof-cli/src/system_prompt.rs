@@ -98,6 +98,21 @@ pub fn build_system_prompt(session: Option<&SessionSnapshot>) -> String {
         "When formalizing or continuing a proof, prefer structured progress markers such as TITLE, PROBLEM, FORMAL_TARGET, ACCEPTED_TARGET, PHASE, STATUS, QUESTION, OPTION, OPTION_TARGET, RECOMMENDED_OPTION, THEOREM, LEMMA, PAPER, NEXT, and fenced ```lean``` blocks when relevant.".to_string(),
         "Break complex proofs into sub-lemmas. For each key intermediate result, emit a separate LEMMA: label :: statement marker. This creates individual proof nodes for the dashboard graph.".to_string(),
         concat!(
+            "## Tools\n\n",
+            "You have coding tools for working with the Lean workspace:\n\n",
+            "- `lean_verify`: Verify a .lean file by running `lake env lean`. Use after writing or patching code.\n",
+            "- `lean_check`: Run `#check <expr>` to look up a type signature. Use to find exact Mathlib names instead of guessing.\n",
+            "- `lean_eval`: Run `#eval <expr>` to evaluate an expression.\n",
+            "- `lean_search_tactic`: Run exact?/apply?/rw? to find applicable tactics at sorry positions.\n",
+            "- `file_read`: Read a file from the workspace.\n",
+            "- `file_write`: Write or create a file in the workspace.\n",
+            "- `file_patch`: Apply a surgical patch to a file.\n",
+            "- `workspace_ls`: List workspace files.\n\n",
+            "Workflow: Write code with file_write, verify with lean_verify, fix errors with file_patch, repeat. ",
+            "Use lean_check to look up exact lemma names instead of guessing. Use lean_search_tactic at sorry positions. ",
+            "You can iterate multiple times within a single turn: write, verify, see errors, fix, verify again.",
+        ).to_string(),
+        concat!(
             "After making proof progress, include a ```latex block containing the CUMULATIVE paper body (not the preamble). ",
             "Write it as a proper academic math paper: theorem environments, proof sketches in natural language, mathematical notation in $...$ and \\[...\\], ",
             "references to the Lean formalization, and clear exposition. The paper should read like a publishable math article, not a code dump. ",
@@ -315,12 +330,9 @@ pub fn transcript_entry_to_turn_message(
         MessageRole::User => "user",
         MessageRole::Assistant => "assistant",
         MessageRole::System => "system",
-        MessageRole::Notice => return None,
+        MessageRole::Notice | MessageRole::ToolCall | MessageRole::ToolResult => return None,
     };
-    Some(TurnMessage {
-        role: role.to_string(),
-        content: entry.content,
-    })
+    Some(TurnMessage::chat(role, entry.content))
 }
 
 pub async fn build_turn_messages_with_retrieval(
@@ -333,10 +345,7 @@ pub async fn build_turn_messages_with_retrieval(
         system_prompt.push_str("\n\n");
         system_prompt.push_str(&retrieval);
     }
-    let mut messages = vec![TurnMessage {
-        role: "system".to_string(),
-        content: system_prompt,
-    }];
+    let mut messages = vec![TurnMessage::chat("system", system_prompt)];
     if let Some(session) = session {
         let recent = session
             .transcript
@@ -362,9 +371,7 @@ pub async fn build_branch_turn_messages(
     branch_id: &str,
 ) -> Vec<TurnMessage> {
     let retrieval = retrieval_context(store, Some(session)).await;
-    let mut messages = vec![TurnMessage {
-        role: "system".to_string(),
-        content: [
+    let mut messages = vec![TurnMessage::chat("system", [
             build_system_prompt(Some(session)),
             retrieval,
             format!("You are the {} branch for OpenProof.", agent_role_label(role)),
@@ -394,15 +401,11 @@ pub async fn build_branch_turn_messages(
                 }
             },
         ]
-        .join("\n\n"),
-    }];
-    messages.push(TurnMessage {
-        role: "user".to_string(),
-        content: format!(
+        .join("\n\n"))];
+    messages.push(TurnMessage::chat("user", format!(
             "Continue the branch task now.\nRole: {}\nTask: {}",
             agent_role_label(role),
             title
-        ),
-    });
+        )));
     messages
 }

@@ -87,6 +87,26 @@ impl AppState {
                 return self.apply_append_notice(title, content);
             }
 
+            // --- Tool calls ---
+            AppEvent::ToolCallReceived {
+                call_id,
+                tool_name,
+                arguments,
+            } => {
+                return self.apply_tool_call_received(call_id, tool_name, arguments);
+            }
+            AppEvent::ToolResultReceived {
+                call_id,
+                tool_name,
+                success,
+                output,
+            } => {
+                return self.apply_tool_result_received(call_id, tool_name, success, output);
+            }
+            AppEvent::ToolLoopIteration(iteration) => {
+                self.tool_loop_iteration = iteration;
+            }
+
             // --- UI / navigation ---
             AppEvent::FocusNext => {
                 self.focus = self.focus.next();

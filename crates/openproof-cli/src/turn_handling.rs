@@ -11,10 +11,16 @@ use crate::helpers::{
 };
 use crate::system_prompt::{build_branch_turn_messages, build_turn_messages_with_retrieval};
 use openproof_core::{AppEvent, AppState, PendingWrite, SubmittedInput};
-use openproof_model::{run_codex_turn, run_codex_turn_streaming, CodexTurnRequest};
+use openproof_lean::tools::{execute_tool, ToolContext, ToolOutput};
+use openproof_model::{
+    run_codex_turn_with_events, CodexTurnRequest, StreamEvent, TurnMessage,
+};
 use openproof_protocol::{AgentRole, AgentStatus, BranchQueueState, SessionSnapshot};
 use openproof_store::AppStore;
 use tokio::sync::mpsc;
+
+/// Maximum number of tool-loop iterations per turn.
+const MAX_TOOL_ITERATIONS: usize = 25;
 
 pub fn handle_submission(
     tx: mpsc::UnboundedSender<AppEvent>,
@@ -42,38 +48,133 @@ pub fn handle_submission(
     tokio::spawn(async move {
         let messages =
             build_turn_messages_with_retrieval(&store_for_model, Some(&session_snapshot)).await;
-        let (delta_tx, mut delta_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-        let tx_stream = tx_model.clone();
-        tokio::spawn(async move {
-            while let Some(delta) = delta_rx.recv().await {
-                let _ = tx_stream.send(AppEvent::StreamDelta(delta));
-            }
-        });
-        let result = run_codex_turn_streaming(
+
+        run_agentic_loop(
+            tx_model,
+            store_for_model,
+            &submission.session_id,
+            messages,
+            &session_snapshot,
+        )
+        .await;
+    });
+}
+
+/// Run the agentic loop: call the model, execute tool calls, repeat.
+async fn run_agentic_loop(
+    tx: mpsc::UnboundedSender<AppEvent>,
+    store: AppStore,
+    session_id: &str,
+    initial_messages: Vec<TurnMessage>,
+    session: &SessionSnapshot,
+) {
+    let mut messages = initial_messages;
+    let project_dir = resolve_lean_project_dir();
+    let workspace_dir = store.workspace_dir(session_id);
+    // Ensure workspace directory exists.
+    let _ = std::fs::create_dir_all(&workspace_dir);
+
+    for iteration in 0..MAX_TOOL_ITERATIONS {
+        let _ = tx.send(AppEvent::ToolLoopIteration(iteration));
+
+        let tx_for_events = tx.clone();
+        let turn_result = run_codex_turn_with_events(
             CodexTurnRequest {
-                session_id: &submission.session_id,
+                session_id,
                 messages: &messages,
                 model: "gpt-5.4",
                 reasoning_effort: "high",
             },
-            delta_tx,
+            move |event| match event {
+                StreamEvent::TextDelta(delta) => {
+                    let _ = tx_for_events.send(AppEvent::StreamDelta(delta));
+                }
+                StreamEvent::Reasoning => {
+                    let _ = tx_for_events.send(AppEvent::ReasoningStarted);
+                }
+                StreamEvent::ToolCallStart { ref name, .. } => {
+                    let _ = tx_for_events.send(AppEvent::AppendNotice {
+                        title: "Tool".to_string(),
+                        content: format!("Calling {name}..."),
+                    });
+                }
+                _ => {}
+            },
         )
         .await;
 
-        match result {
-            Ok(_text) => {
-                // Streaming text was accumulated via StreamDelta events.
-                // TurnFinished will flush it into AppendAssistant.
+        match turn_result {
+            Ok(result) => {
+                // If there are no tool calls, we are done.
+                if result.tool_calls.is_empty() {
+                    // Text was streamed via StreamDelta events.
+                    break;
+                }
+
+                // Flush any accumulated streaming text before tool call entries.
+                if !result.text.trim().is_empty() {
+                    let _ = tx.send(AppEvent::StreamFinished);
+                }
+
+                // Execute each tool call.
+                let imports = session.proof.imports.clone();
+                for call in &result.tool_calls {
+                    // Emit tool call event for transcript.
+                    let _ = tx.send(AppEvent::ToolCallReceived {
+                        call_id: call.call_id.clone(),
+                        tool_name: call.name.clone(),
+                        arguments: call.arguments.clone(),
+                    });
+
+                    // Execute the tool on a blocking thread.
+                    let output = tokio::task::spawn_blocking({
+                        let name = call.name.clone();
+                        let arguments = call.arguments.clone();
+                        let project_dir = project_dir.clone();
+                        let workspace_dir = workspace_dir.clone();
+                        let imports = imports.clone();
+                        move || {
+                            let ctx = ToolContext {
+                                project_dir: &project_dir,
+                                workspace_dir: &workspace_dir,
+                                imports: &imports,
+                            };
+                            execute_tool(&name, &arguments, &ctx)
+                        }
+                    })
+                    .await
+                    .unwrap_or_else(|_| ToolOutput {
+                        success: false,
+                        content: "Tool execution panicked".to_string(),
+                    });
+
+                    // Emit tool result event for transcript.
+                    let _ = tx.send(AppEvent::ToolResultReceived {
+                        call_id: call.call_id.clone(),
+                        tool_name: call.name.clone(),
+                        success: output.success,
+                        output: output.content.clone(),
+                    });
+
+                    // Append the tool result to messages for the next API call.
+                    messages.push(TurnMessage::tool_result(
+                        &call.call_id,
+                        &output.content,
+                    ));
+                }
+                // Continue the loop: call the API again with tool results.
             }
             Err(error) => {
-                let _ = tx_model.send(AppEvent::AppendNotice {
+                let _ = tx.send(AppEvent::AppendNotice {
                     title: "Assistant Error".to_string(),
                     content: error.to_string(),
                 });
+                break;
             }
         }
-        let _ = tx_model.send(AppEvent::TurnFinished);
-    });
+    }
+
+    let _ = tx.send(AppEvent::TurnFinished);
 }
 
 pub fn start_agent_branch_turn(
@@ -88,43 +189,90 @@ pub fn start_agent_branch_turn(
     tokio::spawn(async move {
         let messages =
             build_branch_turn_messages(&store, &session_snapshot, role, &title, &branch_id).await;
-        let result = run_codex_turn(CodexTurnRequest {
-            session_id: &branch_id,
-            messages: &messages,
-            model: "gpt-5.4",
-            reasoning_effort: "high",
-        })
-        .await;
 
-        match result {
-            Ok(text) => {
-                let content = if text.trim().is_empty() {
-                    "The model returned no visible text.".to_string()
-                } else {
-                    text
-                };
-                let summary = summarize_branch_output(&content);
-                let _ = tx.send(AppEvent::AppendBranchAssistant {
-                    branch_id: branch_id.clone(),
-                    content,
-                });
-                let _ = tx.send(AppEvent::FinishBranch {
-                    branch_id,
-                    status: AgentStatus::Done,
-                    summary,
-                    output: String::new(),
-                });
-            }
-            Err(error) => {
-                let message = error.to_string();
-                let _ = tx.send(AppEvent::FinishBranch {
-                    branch_id,
-                    status: AgentStatus::Error,
-                    summary: format!("Branch failed: {}", truncate(&message, 160)),
-                    output: message,
-                });
+        // Branch agents also get the agentic loop with tool access.
+        let project_dir = resolve_lean_project_dir();
+        let workspace_dir = store.workspace_dir(&session_snapshot.id);
+        let _ = std::fs::create_dir_all(&workspace_dir);
+        let imports = session_snapshot.proof.imports.clone();
+        let mut all_messages = messages;
+        let mut accumulated_text = String::new();
+
+        for _iteration in 0..MAX_TOOL_ITERATIONS {
+            let result = run_codex_turn_with_events(
+                CodexTurnRequest {
+                    session_id: &branch_id,
+                    messages: &all_messages,
+                    model: "gpt-5.4",
+                    reasoning_effort: "high",
+                },
+                |_| {},
+            )
+            .await;
+
+            match result {
+                Ok(turn) => {
+                    accumulated_text.push_str(&turn.text);
+                    if turn.tool_calls.is_empty() {
+                        break;
+                    }
+                    // Execute tool calls for the branch.
+                    for call in &turn.tool_calls {
+                        let output = tokio::task::spawn_blocking({
+                            let name = call.name.clone();
+                            let arguments = call.arguments.clone();
+                            let project_dir = project_dir.clone();
+                            let workspace_dir = workspace_dir.clone();
+                            let imports = imports.clone();
+                            move || {
+                                let ctx = ToolContext {
+                                    project_dir: &project_dir,
+                                    workspace_dir: &workspace_dir,
+                                    imports: &imports,
+                                };
+                                execute_tool(&name, &arguments, &ctx)
+                            }
+                        })
+                        .await
+                        .unwrap_or_else(|_| ToolOutput {
+                            success: false,
+                            content: "Tool execution panicked".to_string(),
+                        });
+                        all_messages.push(TurnMessage::tool_result(
+                            &call.call_id,
+                            &output.content,
+                        ));
+                    }
+                }
+                Err(error) => {
+                    let message = error.to_string();
+                    let _ = tx.send(AppEvent::FinishBranch {
+                        branch_id,
+                        status: AgentStatus::Error,
+                        summary: format!("Branch failed: {}", truncate(&message, 160)),
+                        output: message,
+                    });
+                    return;
+                }
             }
         }
+
+        let content = if accumulated_text.trim().is_empty() {
+            "The model returned no visible text.".to_string()
+        } else {
+            accumulated_text
+        };
+        let summary = summarize_branch_output(&content);
+        let _ = tx.send(AppEvent::AppendBranchAssistant {
+            branch_id: branch_id.clone(),
+            content,
+        });
+        let _ = tx.send(AppEvent::FinishBranch {
+            branch_id,
+            status: AgentStatus::Done,
+            summary,
+            output: String::new(),
+        });
     });
 }
 

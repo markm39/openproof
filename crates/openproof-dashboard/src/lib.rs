@@ -417,8 +417,20 @@ fn build_session_summary(session: &SessionSnapshot) -> DashboardSessionSummary {
             MessageRole::Assistant => "assistant".to_string(),
             MessageRole::System => "system".to_string(),
             MessageRole::Notice => "notice".to_string(),
+            MessageRole::ToolCall => "tool_call".to_string(),
+            MessageRole::ToolResult => "tool_result".to_string(),
         }),
-        last_excerpt: last_entry.map(|entry| truncate(&entry.content, 180)),
+        last_excerpt: last_entry.map(|entry| match entry.role {
+            MessageRole::ToolCall => {
+                let name = entry.title.as_deref().unwrap_or("tool");
+                format!(">> {name}()")
+            }
+            MessageRole::ToolResult => {
+                let name = entry.title.as_deref().unwrap_or("tool");
+                truncate(&format!("<< {name}: {}", entry.content), 180)
+            }
+            _ => truncate(&entry.content, 180),
+        }),
     }
 }
 

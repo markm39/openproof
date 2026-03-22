@@ -7,4 +7,5 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 chrono.workspace = true
+serde_json.workspace = true
 openproof-protocol = { path = "../openproof-protocol" }

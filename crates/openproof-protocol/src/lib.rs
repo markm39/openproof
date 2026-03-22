@@ -9,6 +9,8 @@ pub enum MessageRole {
     System,
     #[default]
     Notice,
+    ToolCall,
+    ToolResult,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -19,6 +21,33 @@ pub struct TranscriptEntry {
     pub title: Option<String>,
     pub content: String,
     pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ToolCallEntry {
+    pub call_id: String,
+    pub tool_name: String,
+    /// JSON-encoded arguments.
+    pub arguments: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ToolResultEntry {
+    pub call_id: String,
+    pub tool_name: String,
+    pub success: bool,
+    pub output: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct WorkspaceFileEntry {
+    /// Relative path within the session workspace directory.
+    pub path: String,
+    pub size_bytes: usize,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -246,6 +275,10 @@ pub struct ProofSessionState {
     pub paper_path: Option<String>,
     /// How many lean verification attempts have been made.
     pub attempt_number: usize,
+    /// Files in the session workspace (multi-file Lean project).
+    pub workspace_files: Vec<WorkspaceFileEntry>,
+    /// How many tool loop iterations were used in the last turn.
+    pub tool_iteration_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

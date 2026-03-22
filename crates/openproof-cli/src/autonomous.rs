@@ -34,14 +34,8 @@ async fn research_turn(target: &str, failed_summary: &str) -> Option<String> {
          Be concrete -- give actual Mathlib names, not guesses. Use #check if unsure."
     );
     let messages = vec![
-        TurnMessage {
-            role: "system".to_string(),
-            content: "You are a Mathlib expert. Return ONLY concrete lemma names and type signatures. No prose.".to_string(),
-        },
-        TurnMessage {
-            role: "user".to_string(),
-            content: prompt,
-        },
+        TurnMessage::chat("system", "You are a Mathlib expert. Return ONLY concrete lemma names and type signatures. No prose."),
+        TurnMessage::chat("user", prompt),
     ];
     run_codex_turn(CodexTurnRequest {
         session_id: "research",
