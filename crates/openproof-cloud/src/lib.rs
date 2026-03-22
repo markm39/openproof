@@ -319,4 +319,83 @@ impl CloudCorpusClient {
             .context("parsing packages response")?;
         Ok(payload.packages)
     }
+
+    /// Semantic search via the cloud's Qdrant-backed endpoint.
+    /// Returns hits ranked by embedding similarity.
+    pub async fn search_semantic(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<SemanticSearchHit>> {
+        let base_url = match self.base_url() {
+            Some(url) => url,
+            None => return Ok(Vec::new()),
+        };
+        let clamped_limit = limit.max(1).min(32);
+        let response = self
+            .client
+            .get(format!("{base_url}/api/v1/search/semantic"))
+            .query(&[("query", query), ("limit", &clamped_limit.to_string())])
+            .send()
+            .await
+            .context("semantic search request failed")?;
+        if !response.status().is_success() {
+            return Ok(Vec::new());
+        }
+        let payload: serde_json::Value = response.json().await.context("parsing semantic response")?;
+        let hits = payload
+            .get("hits")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|h| {
+                        Some(SemanticSearchHit {
+                            identity_key: h.get("identity_key")?.as_str()?.to_string(),
+                            label: h.get("label")?.as_str()?.to_string(),
+                            statement: h.get("statement").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            score: h.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(hits)
+    }
+
+    /// Search for failed attempts on the cloud corpus.
+    pub async fn search_failures(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<Vec<serde_json::Value>> {
+        let base_url = match self.base_url() {
+            Some(url) => url,
+            None => return Ok(Vec::new()),
+        };
+        let response = self
+            .client
+            .get(format!("{base_url}/api/v1/search/failures"))
+            .query(&[("query", query), ("limit", &limit.to_string())])
+            .send()
+            .await
+            .context("failure search request failed")?;
+        if !response.status().is_success() {
+            return Ok(Vec::new());
+        }
+        let payload: serde_json::Value = response.json().await?;
+        Ok(payload
+            .get("failures")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default())
+    }
+}
+
+/// A semantic search hit from the cloud corpus.
+#[derive(Debug, Clone)]
+pub struct SemanticSearchHit {
+    pub identity_key: String,
+    pub label: String,
+    pub statement: String,
+    pub score: f32,
 }

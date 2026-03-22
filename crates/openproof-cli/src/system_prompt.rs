@@ -299,6 +299,28 @@ pub async fn retrieval_context(store: &AppStore, session: Option<&SessionSnapsho
             ));
         }
     }
+
+    // Semantic search (cloud Qdrant) -- finds results by meaning, not just keywords
+    if session.cloud.share_mode != ShareMode::Local {
+        let client = openproof_cloud::CloudCorpusClient::new(Default::default());
+        if let Ok(semantic_hits) = client.search_semantic(&query, 6).await {
+            let new_hits: Vec<_> = semantic_hits
+                .iter()
+                .filter(|h| !sections.iter().any(|s| s.contains(&h.label)))
+                .collect();
+            if !new_hits.is_empty() {
+                sections.push(format!(
+                    "Semantically similar verified lemmas:\n{}",
+                    new_hits
+                        .iter()
+                        .map(|h| format!("- {} (similarity: {:.2}) :: {}", h.label, h.score, h.statement))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
+            }
+        }
+    }
+
     sections.join("\n\n")
 }
 
