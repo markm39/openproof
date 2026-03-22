@@ -201,6 +201,8 @@ pub struct CodexTurnRequest<'a> {
 pub enum TurnMessage {
     /// A regular chat message (user, assistant, system/developer).
     Chat { role: String, content: String },
+    /// A function call the model made (must be included before the result).
+    FunctionCall { call_id: String, name: String, arguments: String },
     /// A tool result returned after executing a tool call.
     ToolResult { call_id: String, output: String },
 }
@@ -326,6 +328,14 @@ fn serialize_turn_message(message: &TurnMessage) -> Value {
                     }]
                 })
             }
+        }
+        TurnMessage::FunctionCall { call_id, name, arguments } => {
+            json!({
+                "type": "function_call",
+                "call_id": call_id,
+                "name": name,
+                "arguments": arguments
+            })
         }
         TurnMessage::ToolResult { call_id, output } => {
             json!({
