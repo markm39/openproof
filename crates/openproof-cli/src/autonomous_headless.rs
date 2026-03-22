@@ -45,10 +45,38 @@ pub async fn run_autonomous(
         if let Err(e) = state.switch_session(session_id) {
             bail!("Could not resume session {session_id}: {e}");
         }
+        // Reset phase so autonomous loop doesn't stop immediately
+        if let Some(s) = state.current_session_mut() {
+            if s.proof.phase == "done" || s.proof.phase == "blocked" {
+                eprintln!("[run] Resetting phase from '{}' to 'proving' for continuation", s.proof.phase);
+                s.proof.phase = "proving".to_string();
+            }
+            s.proof.is_autonomous_running = false; // will be set by the loop
+            s.proof.autonomous_iteration_count = 0;
+            s.proof.autonomous_pause_reason = None;
+            s.proof.autonomous_stop_reason = None;
+            // Reset all stalled branches so they can be retried
+            for branch in &mut s.proof.branches {
+                if branch.status == openproof_protocol::AgentStatus::Blocked
+                    || branch.status == openproof_protocol::AgentStatus::Error
+                {
+                    branch.status = openproof_protocol::AgentStatus::Done;
+                }
+            }
+        }
         let session = state.current_session().cloned().unwrap();
         eprintln!("[run] Session: {} ({})", session.title, session.id);
         eprintln!("[run] Phase: {}, Nodes: {}, Branches: {}",
             session.proof.phase, session.proof.nodes.len(), session.proof.branches.len());
+
+        // If a new problem text was given, submit it as a continuation message
+        if !problem.trim().is_empty() {
+            let _ = state.submit_text(problem.clone());
+            if let Some(session) = state.current_session().cloned() {
+                let s = store.clone();
+                let _ = tokio::task::spawn_blocking(move || s.save_session(&session)).await;
+            }
+        }
     } else {
         let title = label.unwrap_or_else(|| {
             let preview: String = problem.chars().take(60).collect();
