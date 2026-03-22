@@ -192,6 +192,8 @@ pub struct CodexTurnRequest<'a> {
     pub messages: &'a [TurnMessage],
     pub model: &'a str,
     pub reasoning_effort: &'a str,
+    /// If false, tools are not included in the API call. Default true.
+    pub include_tools: bool,
 }
 
 /// A message in the conversation sent to the model.
@@ -285,8 +287,13 @@ pub async fn run_codex_turn(request: CodexTurnRequest<'_>) -> Result<String> {
 }
 
 fn build_turn_payload(request: &CodexTurnRequest<'_>) -> Value {
-    let mut all_tools: Vec<Value> = vec![json!({ "type": "web_search" })];
-    all_tools.extend(tools::tool_definitions());
+    let tools_value = if request.include_tools {
+        let mut all_tools: Vec<Value> = vec![json!({ "type": "web_search" })];
+        all_tools.extend(tools::tool_definitions());
+        json!(all_tools)
+    } else {
+        json!([])
+    };
     json!({
         "model": request.model,
         "store": false,
@@ -294,8 +301,8 @@ fn build_turn_payload(request: &CodexTurnRequest<'_>) -> Value {
         "instructions": "You are openproof, a local-first formal math assistant. Be concise, direct, and helpful. If the user asks a general question, answer directly. If the user gives a theorem-like statement, help formalize or prove it in Lean.",
         "input": request.messages.iter().map(serialize_turn_message).collect::<Vec<_>>(),
         "include": ["reasoning.encrypted_content"],
-        "tool_choice": "auto",
-        "tools": all_tools,
+        "tool_choice": if request.include_tools { "auto" } else { "none" },
+        "tools": tools_value,
         "reasoning": {
             "effort": request.reasoning_effort
         }

@@ -42,6 +42,7 @@ async fn research_turn(target: &str, failed_summary: &str) -> Option<String> {
         messages: &messages,
         model: "gpt-5.4",
         reasoning_effort: "medium",
+        include_tools: false,
     })
     .await
     .ok()

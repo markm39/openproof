@@ -174,6 +174,7 @@ pub async fn run_ask(prompt: String) -> Result<()> {
         ],
         model: "gpt-5.4",
         reasoning_effort: "high",
+        include_tools: false,
     })
     .await?;
     println!("{response}");

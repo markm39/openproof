@@ -12,7 +12,7 @@ use crate::helpers::{
 use crate::system_prompt::{build_branch_turn_messages, build_turn_messages_with_retrieval};
 use openproof_core::{AppEvent, AppState, PendingWrite, SubmittedInput};
 use openproof_lean::tools::{execute_tool, ToolContext, ToolOutput};
-use openproof_model::{
+use openproof_model::{run_codex_turn, 
     run_codex_turn_with_events, CodexTurnRequest, StreamEvent, TurnMessage,
 };
 use openproof_protocol::{AgentRole, AgentStatus, BranchQueueState, SessionSnapshot};
@@ -85,6 +85,7 @@ pub async fn run_agentic_loop(
                 messages: &messages,
                 model: "gpt-5.4",
                 reasoning_effort: "high",
+            include_tools: true,
             },
             move |event| match event {
                 StreamEvent::TextDelta(delta) => {
@@ -224,114 +225,47 @@ pub fn start_agent_branch_turn(
         let messages =
             build_branch_turn_messages(&store, &session_snapshot, role, &title, &branch_id).await;
 
-        // Branch agents also get the agentic loop with tool access.
-        let project_dir = resolve_lean_project_dir();
-        let workspace_dir = store.workspace_dir(&session_snapshot.id);
-        let _ = std::fs::create_dir_all(&workspace_dir);
-        let imports = session_snapshot.proof.imports.clone();
-        let mut all_messages = messages;
-        let mut accumulated_text = String::new();
+        // Branch turns use simple non-tool model calls.
+        // (Tool loop only works for the main turn where we manage the full
+        // Responses API conversation. Branch turns are single-shot.)
+        let result = run_codex_turn(CodexTurnRequest {
+            session_id: &branch_id,
+            messages: &messages,
+            model: "gpt-5.4",
+            reasoning_effort: "high",
+            include_tools: false,
+        })
+        .await;
 
-        for _iteration in 0..MAX_TOOL_ITERATIONS {
-            let result = run_codex_turn_with_events(
-                CodexTurnRequest {
-                    session_id: &branch_id,
-                    messages: &all_messages,
-                    model: "gpt-5.4",
-                    reasoning_effort: "high",
-                },
-                |_| {},
-            )
-            .await;
-
-            match result {
-                Ok(turn) => {
-                    accumulated_text.push_str(&turn.text);
-                    if turn.tool_calls.is_empty() {
-                        break;
-                    }
-                    // Execute tool calls for the branch.
-                    for call in &turn.tool_calls {
-                        let output = if call.name == "corpus_search" {
-                            let query = serde_json::from_str::<serde_json::Value>(&call.arguments)
-                                .ok()
-                                .and_then(|v| v.get("query").and_then(|q| q.as_str()).map(str::to_string))
-                                .unwrap_or_default();
-                            let mut results = Vec::new();
-                            if let Ok(hits) = store.search_verified_corpus(&query, 10) {
-                                for (label, statement, _) in &hits {
-                                    results.push(format!("- {label} :: {statement}"));
-                                }
-                            }
-                            let cloud = openproof_cloud::CloudCorpusClient::new(Default::default());
-                            if let Ok(hits) = cloud.search_semantic(&query, 10).await {
-                                for h in &hits {
-                                    if !results.iter().any(|r| r.contains(&h.label)) {
-                                        results.push(format!("- {} (sim:{:.2}) :: {}", h.label, h.score, h.statement));
-                                    }
-                                }
-                            }
-                            ToolOutput {
-                                success: true,
-                                content: if results.is_empty() { "No results.".to_string() } else { results.join("\n") },
-                            }
-                        } else {
-                            tokio::task::spawn_blocking({
-                                let name = call.name.clone();
-                                let arguments = call.arguments.clone();
-                                let project_dir = project_dir.clone();
-                                let workspace_dir = workspace_dir.clone();
-                                let imports = imports.clone();
-                                move || {
-                                    let ctx = ToolContext {
-                                        project_dir: &project_dir,
-                                        workspace_dir: &workspace_dir,
-                                        imports: &imports,
-                                    };
-                                    execute_tool(&name, &arguments, &ctx)
-                                }
-                            })
-                            .await
-                            .unwrap_or_else(|_| ToolOutput {
-                                success: false,
-                                content: "Tool execution panicked".to_string(),
-                            })
-                        };
-                        all_messages.push(TurnMessage::tool_result(
-                            &call.call_id,
-                            &output.content,
-                        ));
-                    }
-                }
-                Err(error) => {
-                    let message = error.to_string();
-                    let _ = tx.send(AppEvent::FinishBranch {
-                        branch_id,
-                        status: AgentStatus::Error,
-                        summary: format!("Branch failed: {}", truncate(&message, 160)),
-                        output: message,
-                    });
-                    return;
-                }
+        match result {
+            Ok(text) => {
+                let content = if text.trim().is_empty() {
+                    "The model returned no visible text.".to_string()
+                } else {
+                    text
+                };
+                let summary = summarize_branch_output(&content);
+                let _ = tx.send(AppEvent::AppendBranchAssistant {
+                    branch_id: branch_id.clone(),
+                    content,
+                });
+                let _ = tx.send(AppEvent::FinishBranch {
+                    branch_id,
+                    status: AgentStatus::Done,
+                    summary,
+                    output: String::new(),
+                });
+            }
+            Err(error) => {
+                let message = error.to_string();
+                let _ = tx.send(AppEvent::FinishBranch {
+                    branch_id,
+                    status: AgentStatus::Error,
+                    summary: format!("Branch failed: {}", truncate(&message, 160)),
+                    output: message,
+                });
             }
         }
-
-        let content = if accumulated_text.trim().is_empty() {
-            "The model returned no visible text.".to_string()
-        } else {
-            accumulated_text
-        };
-        let summary = summarize_branch_output(&content);
-        let _ = tx.send(AppEvent::AppendBranchAssistant {
-            branch_id: branch_id.clone(),
-            content,
-        });
-        let _ = tx.send(AppEvent::FinishBranch {
-            branch_id,
-            status: AgentStatus::Done,
-            summary,
-            output: String::new(),
-        });
     });
 }
 
