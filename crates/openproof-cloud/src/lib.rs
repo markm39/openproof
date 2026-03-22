@@ -16,7 +16,11 @@ fn normalize_base_url(value: &str) -> Option<String> {
     if trimmed.is_empty() {
         None
     } else {
-        Some(trimmed.trim_end_matches('/').to_string())
+        // Strip trailing /api or /api/ to prevent doubled paths like /api/api/v1/...
+        let cleaned = trimmed
+            .trim_end_matches('/')
+            .trim_end_matches("/api");
+        Some(cleaned.to_string())
     }
 }
 
@@ -332,14 +336,21 @@ impl CloudCorpusClient {
             None => return Ok(Vec::new()),
         };
         let clamped_limit = limit.max(1).min(32);
-        let response = self
+        let response = match self
             .client
             .get(format!("{base_url}/api/v1/search/semantic"))
             .query(&[("query", query), ("limit", &clamped_limit.to_string())])
             .send()
             .await
-            .context("semantic search request failed")?;
+        {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("[corpus] semantic search failed: {e}");
+                return Ok(Vec::new());
+            }
+        };
         if !response.status().is_success() {
+            eprintln!("[corpus] semantic search returned {}", response.status());
             return Ok(Vec::new());
         }
         let payload: serde_json::Value = response.json().await.context("parsing semantic response")?;

@@ -480,8 +480,12 @@ pub async fn run_codex_turn_with_events(
         .tokens
         .context("Missing ChatGPT tokens in auth state.")?;
 
-    let client = reqwest::Client::builder().build()?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(600))
+        .build()?;
     let payload = build_turn_payload(&request);
+    eprintln!("[api] POST {OPENAI_CODEX_BASE_URL}/responses (model={}, tools={})",
+        request.model, request.include_tools);
     let mut response = client
         .post(format!("{OPENAI_CODEX_BASE_URL}/responses"))
         .header("authorization", format!("Bearer {}", tokens.access_token))
@@ -496,6 +500,7 @@ pub async fn run_codex_turn_with_events(
         .json(&payload)
         .send()
         .await?;
+    eprintln!("[api] Response: {}", response.status());
 
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
         if let Ok(Some(_)) = sync_auth_from_codex_cli() {
@@ -542,9 +547,14 @@ async fn read_event_stream_with_events(
     let mut pending_calls: std::collections::HashMap<u64, (String, String, String)> =
         std::collections::HashMap::new(); // output_index -> (call_id, name, args_buffer)
     let mut finished_calls: Vec<ToolCall> = Vec::new();
+    let mut chunk_count: usize = 0;
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;
+        chunk_count += 1;
+        if chunk_count == 1 {
+            eprintln!("[api] First SSE chunk received ({} bytes)", chunk.len());
+        }
         buffer.push_str(&String::from_utf8_lossy(&chunk));
         let normalized = buffer.replace("\r\n", "\n");
         let mut parts = normalized
@@ -638,6 +648,8 @@ async fn read_event_stream_with_events(
         }
     }
 
+    eprintln!("[api] Stream done: {} chunks, {} chars text, {} tool calls",
+        chunk_count, full_text.len(), finished_calls.len());
     Ok(TurnResult {
         text: full_text,
         tool_calls: finished_calls,

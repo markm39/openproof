@@ -132,6 +132,7 @@ pub async fn run_agentic_loop(
                 let imports = session.proof.imports.clone();
                 for call in &result.tool_calls {
                     // Emit tool call event for transcript.
+                    eprintln!("[tool] {} ({})", call.name, call.arguments.chars().take(80).collect::<String>());
                     let _ = tx.send(AppEvent::ToolCallReceived {
                         call_id: call.call_id.clone(),
                         tool_name: call.name.clone(),
@@ -155,12 +156,18 @@ pub async fn run_agentic_loop(
 
                         // Cloud semantic search
                         let cloud_client = openproof_cloud::CloudCorpusClient::new(Default::default());
-                        if let Ok(semantic_hits) = cloud_client.search_semantic(&query, 10).await {
-                            for hit in &semantic_hits {
-                                let line = format!("- {} (sim:{:.2}) :: {}", hit.label, hit.score, hit.statement);
-                                if !results.iter().any(|r| r.contains(&hit.label)) {
-                                    results.push(line);
+                        eprintln!("[corpus] Cloud available: {:?}", cloud_client.availability());
+                        match cloud_client.search_semantic(&query, 10).await {
+                            Ok(semantic_hits) => {
+                                for hit in &semantic_hits {
+                                    let line = format!("- {} (sim:{:.2}) :: {}", hit.label, hit.score, hit.statement);
+                                    if !results.iter().any(|r| r.contains(&hit.label)) {
+                                        results.push(line);
+                                    }
                                 }
+                            }
+                            Err(e) => {
+                                eprintln!("[corpus] Cloud semantic search error: {e}");
                             }
                         }
 
@@ -194,6 +201,10 @@ pub async fn run_agentic_loop(
                     };
 
                     // Emit tool result event for transcript.
+                    eprintln!("[tool] {} -> {} ({})",
+                        call.name,
+                        if output.success { "ok" } else { "FAIL" },
+                        output.content.chars().take(120).collect::<String>());
                     let _ = tx.send(AppEvent::ToolResultReceived {
                         call_id: call.call_id.clone(),
                         tool_name: call.name.clone(),
