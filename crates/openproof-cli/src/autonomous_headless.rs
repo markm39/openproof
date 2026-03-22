@@ -52,6 +52,7 @@ pub async fn run_autonomous(
                 s.proof.phase = "proving".to_string();
             }
             s.proof.is_autonomous_running = false; // will be set by the loop
+            s.proof.full_autonomous = true; // never stop until ALL nodes verified
             s.proof.autonomous_iteration_count = 0;
             s.proof.autonomous_pause_reason = None;
             s.proof.autonomous_stop_reason = None;
@@ -353,8 +354,11 @@ pub async fn run_autonomous(
         }
     }
 
-    // Start autonomous loop
-    eprintln!("\n[run] === Starting autonomous loop ===\n");
+    // Start autonomous loop in full mode (never stops until all nodes verified)
+    if let Some(s) = state.current_session_mut() {
+        s.proof.full_autonomous = true;
+    }
+    eprintln!("\n[run] === Starting autonomous loop (full mode) ===\n");
     if let Ok(write) = state.set_autonomous_run_state(AutonomousRunPatch {
         is_autonomous_running: Some(true),
         autonomous_iteration_count: Some(0),
