@@ -75,6 +75,46 @@ pub fn load_prompt_context() -> PromptContextFiles {
     }
 }
 
+fn tools_and_workflow_section() -> &'static str {
+    concat!(
+        "## Tools & Workspace\n\n",
+        "You have a persistent Lean 4 workspace with files that survive across turns. ",
+        "You work like a coding agent: read files, write code, verify with Lean, fix errors, iterate. ",
+        "You can call multiple tools in a single turn to iterate quickly.\n\n",
+
+        "### File tools (read/write/patch the workspace)\n",
+        "- `file_write(path, content)`: Write or create a file. Use for initial code.\n",
+        "- `file_read(path)`: Read a file with line numbers. Use before patching.\n",
+        "- `file_patch(path, patch)`: Apply a surgical diff to a file. Use for targeted fixes instead of rewriting. ",
+        "Patch format: *** Begin Patch / @@ context / -old / +new / *** End Patch.\n",
+        "- `workspace_ls()`: List all files in the workspace.\n\n",
+
+        "### Lean tools (verify and explore)\n",
+        "- `lean_verify(file)`: Compile a .lean file with `lake env lean`. Returns all errors, warnings, and goals. ALWAYS verify after writing or patching.\n",
+        "- `lean_check(expr)`: Look up the type of an expression or Mathlib lemma. NEVER guess a lemma name -- check it first.\n",
+        "- `lean_search_tactic(tactic, file, line)`: Run exact?/apply?/rw? at a sorry position. Lean searches Mathlib for applicable tactics. This is the most powerful tool for closing goals.\n\n",
+
+        "### Corpus tool (search verified mathematics)\n",
+        "- `corpus_search(query)`: Search 190,000+ verified Mathlib declarations plus user-verified proofs. ",
+        "Query by concept ('prime divisor factorial'), name ('Nat.Prime.dvd'), or type signature. ",
+        "Results are machine-verified -- use them directly.\n\n",
+
+        "### Standard workflow\n",
+        "1. Search the corpus for relevant existing results with `corpus_search`.\n",
+        "2. Write Lean code with `file_write('Scratch.lean', ...)`.\n",
+        "3. Verify with `lean_verify('Scratch.lean')`. Read the errors carefully.\n",
+        "4. Fix errors with `file_patch` (surgical) or `file_write` (full rewrite if needed).\n",
+        "5. If unsure of a lemma name, use `lean_check`. If stuck on a goal, use `lean_search_tactic`.\n",
+        "6. Repeat 3-5 until verification passes. Do ALL of this in a single turn.\n\n",
+
+        "CRITICAL RULES:\n",
+        "- Always verify your code with lean_verify. Never claim a proof works without checking.\n",
+        "- Use file_patch for fixes, not file_write. Patches show exactly what changed.\n",
+        "- Use lean_check and corpus_search BEFORE guessing lemma names.\n",
+        "- You can iterate many times in one turn -- write, verify, fix, verify, fix, verify.",
+    )
+}
+
 fn lean_tactics_guidance() -> &'static str {
     // Guidance on Lean 4 proof tactics. Kept as a function to avoid
     // triggering source-scan heuristics on inline string content.
@@ -97,23 +137,7 @@ pub fn build_system_prompt(session: Option<&SessionSnapshot>) -> String {
         lean_tactics_guidance().to_string(),
         "When formalizing or continuing a proof, prefer structured progress markers such as TITLE, PROBLEM, FORMAL_TARGET, ACCEPTED_TARGET, PHASE, STATUS, QUESTION, OPTION, OPTION_TARGET, RECOMMENDED_OPTION, THEOREM, LEMMA, PAPER, NEXT, and fenced ```lean``` blocks when relevant.".to_string(),
         "Break complex proofs into sub-lemmas. For each key intermediate result, emit a separate LEMMA: label :: statement marker. This creates individual proof nodes for the dashboard graph.".to_string(),
-        concat!(
-            "## Tools\n\n",
-            "You have coding tools for working with the Lean workspace:\n\n",
-            "- `lean_verify`: Verify a .lean file by running `lake env lean`. Use after writing or patching code.\n",
-            "- `lean_check`: Run `#check <expr>` to look up a type signature. Use to find exact Mathlib names instead of guessing.\n",
-            "- `lean_eval`: Run `#eval <expr>` to evaluate an expression.\n",
-            "- `lean_search_tactic`: Run exact?/apply?/rw? to find applicable tactics at sorry positions.\n",
-            "- `file_read`: Read a file from the workspace.\n",
-            "- `file_write`: Write or create a file in the workspace.\n",
-            "- `file_patch`: Apply a surgical patch to a file.\n",
-            "- `workspace_ls`: List workspace files.\n",
-            "- `corpus_search`: Search the verified mathematical corpus (190K+ Mathlib lemmas + user proofs). Use to find exact lemma names, relevant theorems, or check what proof approaches have been tried before.\n\n",
-            "Workflow: Write code with file_write, verify with lean_verify, fix errors with file_patch, repeat. ",
-            "Use lean_check to look up exact lemma names instead of guessing. Use lean_search_tactic at sorry positions. ",
-            "Use corpus_search to find relevant Mathlib lemmas by concept (e.g. 'prime divisor factorial') or by name fragment (e.g. 'Nat.Prime.dvd'). ",
-            "You can iterate multiple times within a single turn: write, verify, see errors, fix, verify again.",
-        ).to_string(),
+        tools_and_workflow_section().to_string(),
         concat!(
             "After making proof progress, include a ```latex block containing the CUMULATIVE paper body (not the preamble). ",
             "Write it as a proper academic math paper: theorem environments, proof sketches in natural language, mathematical notation in $...$ and \\[...\\], ",
