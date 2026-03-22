@@ -97,8 +97,8 @@ pub fn run_autonomous_step(
         .current_session()
         .cloned()
         .ok_or_else(|| "No active session.".to_string())?;
-    if let Some(reason) = autonomous_stop_reason(&session)
-        .filter(|reason| !reason.contains("completed the current proof run"))
+    if let Some(reason) = autonomous_stop_reason_with_mode(&session, session.proof.full_autonomous)
+        .filter(|reason| !reason.contains("All proof nodes verified"))
     {
         return Err(reason);
     }
