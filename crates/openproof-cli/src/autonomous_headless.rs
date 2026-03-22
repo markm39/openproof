@@ -56,6 +56,20 @@ pub async fn run_autonomous(
         });
         let write = state.create_session(Some(&title));
         persist_write(tx.clone(), store.clone(), write);
+
+        // Apply config: set cloud mode if configured
+        if let Some(config) = crate::setup::load_config() {
+            if config.corpus_mode == "cloud" {
+                if let Some(s) = state.current_session_mut() {
+                    s.cloud.share_mode = openproof_protocol::ShareMode::Community;
+                    s.cloud.sync_enabled = true;
+                }
+            }
+            if let Some(url) = &config.corpus_url {
+                std::env::set_var("OPENPROOF_CORPUS_URL", url);
+                std::env::set_var("OPENPROOF_ENABLE_REMOTE_CORPUS", "1");
+            }
+        }
     }
 
     // Load auth
