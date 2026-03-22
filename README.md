@@ -1,15 +1,17 @@
-# openproof
+<h1 align="center">openproof</h1>
 
-```
+<p align="center">
+<pre align="center">
   ___                   ____                    __
  / _ \ _ __   ___ _ __ |  _ \ _ __ ___   ___  / _|
 | | | | '_ \ / _ \ '_ \| |_) | '__/ _ \ / _ \| |_
 | |_| | |_) |  __/ | | |  __/| | | (_) | (_) |  _|
  \___/| .__/ \___|_| |_|_|   |_|  \___/ \___/|_|
       |_|
-```
+</pre>
+</p>
 
-Formal math proofs, conversationally.
+<p align="center">Formal math proofs, conversationally.</p>
 
 ## What is this
 
