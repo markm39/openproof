@@ -46,6 +46,24 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
         Some(workspace_label),
     );
 
+    // Apply setup config: set default share mode based on corpus_mode
+    if let Some(config) = crate::setup::load_config() {
+        if config.corpus_mode == "cloud" {
+            // Default new sessions to community mode for cloud corpus
+            if let Some(session) = state.current_session_mut() {
+                if session.cloud.share_mode == openproof_protocol::ShareMode::Local {
+                    session.cloud.share_mode = openproof_protocol::ShareMode::Community;
+                    session.cloud.sync_enabled = true;
+                }
+            }
+        }
+        // Set corpus URL from config if present (overrides hardcoded default)
+        if let Some(url) = &config.corpus_url {
+            std::env::set_var("OPENPROOF_CORPUS_URL", url);
+            std::env::set_var("OPENPROOF_ENABLE_REMOTE_CORPUS", "1");
+        }
+    }
+
     let (tx, mut rx) = mpsc::unbounded_channel::<AppEvent>();
 
     {

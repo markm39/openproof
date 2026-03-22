@@ -68,7 +68,7 @@ impl SetupApp {
             },
             corpus_mode: corpus_id.to_string(),
             corpus_url: if corpus_id == "cloud" {
-                Some("https://corpus.openproof.dev/api".to_string())
+                Some("https://openproof-cloud-production.up.railway.app".to_string())
             } else {
                 None
             },
