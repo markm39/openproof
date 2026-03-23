@@ -344,13 +344,11 @@ impl CloudCorpusClient {
             .await
         {
             Ok(resp) => resp,
-            Err(e) => {
-                eprintln!("[corpus] semantic search failed: {e}");
+            Err(_) => {
                 return Ok(Vec::new());
             }
         };
         if !response.status().is_success() {
-            eprintln!("[corpus] semantic search returned {}", response.status());
             return Ok(Vec::new());
         }
         let payload: serde_json::Value = response.json().await.context("parsing semantic response")?;

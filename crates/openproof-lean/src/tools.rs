@@ -241,9 +241,8 @@ fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutpu
                             content: truncate_output(&parts.join("\n")),
                         });
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         // Fall through to fallback
-                        eprintln!("lean_screen_tactics MCP error: {e}");
                     }
                 }
             }

@@ -67,23 +67,11 @@ where
     // If viewport is at row 0, we need to first scroll everything to make room.
 
     if area.top() == 0 {
-        // Viewport fills from top -- scroll entire screen up to make room,
-        // then move viewport down.
-        queue!(writer, ScrollUp(content_rows))?;
-        io::Write::flush(writer)?;
+        // Viewport fills from top of screen. Write history lines at the
+        // top, then use ScrollUp to push them into terminal scrollback.
 
-        // Viewport is now content_rows higher than where it should be.
-        // Move it down by setting the viewport area.
-        let new_y = 0; // content is now in scrollback, viewport stays at 0
-        let _ = new_y;
-        // Actually, after ScrollUp, the viewport content has moved up by
-        // content_rows. We need to write our history lines at the top of
-        // the screen (rows 0..content_rows), then the viewport draws below.
-
-        // Position cursor at top-left.
+        // Write history at the top of the screen (overwrites viewport rows).
         queue!(writer, MoveTo(0, 0))?;
-
-        // Write each history line.
         for (i, line) in lines.iter().enumerate() {
             if i > 0 {
                 queue!(writer, Print("\r\n"))?;
@@ -91,12 +79,16 @@ where
             queue!(writer, Clear(ClearType::UntilNewLine))?;
             write_line_spans(writer, line)?;
         }
-
-        // Reset styles.
         queue!(writer, SetAttribute(crossterm::style::Attribute::Reset))?;
         io::Write::flush(writer)?;
 
-        // Force full redraw of the viewport.
+        // Push the history lines into scrollback.  ScrollUp moves the top
+        // N rows off-screen into the terminal's scrollback buffer and
+        // shifts the remaining screen content up.
+        queue!(writer, ScrollUp(content_rows))?;
+        io::Write::flush(writer)?;
+
+        // Force full redraw since viewport content was shifted.
         terminal.clear()?;
     } else {
         // There's already space above the viewport. Use scroll region.

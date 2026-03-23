@@ -150,7 +150,6 @@ pub async fn drain_sync_queue(
     };
 
     // Sync failed attempts first (independent of verified items)
-    eprintln!("[sync] Checking {} total jobs for failures...", jobs.len());
     let failure_jobs: Vec<_> = jobs.iter()
         .filter(|j| j.status == "pending" && j.queue_type == "attempt.failure")
         .cloned()
@@ -159,9 +158,7 @@ pub async fn drain_sync_queue(
         if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&job.payload_json) {
             if let Some(attempts) = payload.get("attempts").and_then(|v| v.as_array()) {
                 for attempt in attempts {
-                    if let Err(e) = cloud_client.upload_failed_attempt(attempt.clone()).await {
-                        eprintln!("[sync] Failed attempt upload error: {e}");
-                    }
+                    let _ = cloud_client.upload_failed_attempt(attempt.clone()).await;
                 }
             }
         }
@@ -170,10 +167,6 @@ pub async fn drain_sync_queue(
         let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
             .await;
     }
-    if !failure_jobs.is_empty() {
-        eprintln!("[sync] Uploaded {} failed attempt(s) to cloud", failure_jobs.len());
-    }
-
     let pending_jobs: Vec<_> = jobs
         .into_iter()
         .filter(|j| j.status == "pending" && j.queue_type == "corpus.contribute")
