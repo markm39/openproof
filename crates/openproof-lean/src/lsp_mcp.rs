@@ -27,16 +27,25 @@ pub struct LeanLspMcp {
 }
 
 impl LeanLspMcp {
-    /// Spawn `uvx lean-lsp-mcp` for the given Lean project directory.
+    /// Spawn `lean-lsp-mcp` for the given Lean project directory.
+    /// Tries the directly installed binary first, falls back to `uvx`.
     pub fn spawn(project_dir: &Path) -> Result<Self> {
-        let mut child = Command::new("uvx")
-            .arg("lean-lsp-mcp")
+        let mut child = Command::new("lean-lsp-mcp")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .env("LEAN_PROJECT_PATH", project_dir)
             .spawn()
-            .context("Failed to spawn lean-lsp-mcp. Is it installed? Run: uvx lean-lsp-mcp")?;
+            .or_else(|_| {
+                Command::new("uvx")
+                    .arg("lean-lsp-mcp")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .env("LEAN_PROJECT_PATH", project_dir)
+                    .spawn()
+            })
+            .context("Failed to spawn lean-lsp-mcp. Install: uv tool install lean-lsp-mcp --python 3.12")?;
 
         let stdin = child.stdin.take().context("No stdin on child")?;
         let stdout = child.stdout.take().context("No stdout on child")?;
@@ -56,13 +65,21 @@ impl LeanLspMcp {
 
     /// Check if lean-lsp-mcp is available on the system.
     pub fn is_available() -> bool {
-        Command::new("uvx")
-            .args(["lean-lsp-mcp", "--help"])
+        Command::new("lean-lsp-mcp")
+            .arg("--help")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
             .map(|s| s.success())
-            .unwrap_or(false)
+            .unwrap_or_else(|_| {
+                Command::new("uvx")
+                    .args(["lean-lsp-mcp", "--help"])
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+            })
     }
 
     /// Perform the MCP initialize handshake.

@@ -102,6 +102,7 @@ mod tests {
                 attempt_number: 0,
                 workspace_files: Vec::new(),
                 tool_iteration_count: 0,
+                search_strategy: Default::default(),
             },
         }
     }
@@ -178,6 +179,7 @@ def helperValue : Nat :=
         let sync = store.get_sync_summary().expect("sync summary");
         assert_eq!(corpus.verified_entry_count, 0);
         assert_eq!(corpus.attempt_log_count, 1);
-        assert_eq!(sync.pending_count, 0);
+        // Failed attempts now also queue for cloud sync (attempt.failure type)
+        assert_eq!(sync.pending_count, 1);
     }
 }
