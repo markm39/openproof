@@ -231,14 +231,39 @@ impl AppState {
                 solved,
                 tactics,
             } => {
+                // Add a transcript notice so agent branches see tactic search results
+                let notice = if solved && !tactics.is_empty() {
+                    format!(
+                        "Tactic search SOLVED sorry at line {sorry_line}: {}",
+                        tactics.join("; ")
+                    )
+                } else if !tactics.is_empty() {
+                    format!(
+                        "Tactic search made partial progress at line {sorry_line}: {}",
+                        tactics.join("; ")
+                    )
+                } else {
+                    format!(
+                        "Tactic search exhausted at line {sorry_line}: standard tactics (simp, omega, ring, linarith, aesop, exact?, apply?) all failed. Try a different approach."
+                    )
+                };
+
+                if let Some(session) = self.current_session_mut() {
+                    session.transcript.push(openproof_protocol::TranscriptEntry {
+                        id: format!("tactic_{sorry_line}_{}", chrono::Utc::now().timestamp_millis()),
+                        role: openproof_protocol::MessageRole::Notice,
+                        title: Some("Tactic Search".to_string()),
+                        content: notice.clone(),
+                        created_at: chrono::Utc::now().to_rfc3339(),
+                    });
+                }
+
                 if solved && !tactics.is_empty() {
-                    // Patch the sorry at sorry_line with the solving tactic sequence.
                     let tactic_text = tactics.join("\n  ");
                     self.status = format!(
                         "Tactic search solved line {sorry_line}: {tactic_text}"
                     );
 
-                    // Find the node and patch its content
                     if let Some(session) = self.current_session_mut() {
                         if let Some(node) = session.proof.nodes.iter_mut().find(|n| n.id == node_id) {
                             let patched = replace_sorry_at_line(
@@ -252,18 +277,16 @@ impl AppState {
                                 node.status = openproof_protocol::ProofNodeStatus::Proving;
                             }
                         }
-                        // Mark that we need verification
                         session.proof.phase = "verifying".to_string();
                     }
-                    // Return a PendingWrite so the session is persisted
                     if let Some(session) = self.current_session().cloned() {
                         return Some(PendingWrite { session });
                     }
-                } else if !tactics.is_empty() {
-                    self.status = format!(
-                        "Tactic search partial at line {sorry_line}: {}",
-                        tactics.join("; ")
-                    );
+                } else {
+                    self.status = notice;
+                    if let Some(session) = self.current_session().cloned() {
+                        return Some(PendingWrite { session });
+                    }
                 }
             }
             AppEvent::TacticSearchProgress {
