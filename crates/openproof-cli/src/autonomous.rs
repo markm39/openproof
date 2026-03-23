@@ -1069,10 +1069,17 @@ fn spawn_tactic_search_for_sorrys(
                         }
                         _ => (false, vec![]),
                     };
-                    if !tactics.is_empty() {
+                    let status = match &result {
+                        openproof_search::config::SearchResult::Solved { .. } => "SOLVED",
+                        openproof_search::config::SearchResult::Partial { .. } => "partial",
+                        openproof_search::config::SearchResult::Exhausted { .. } => "exhausted",
+                        openproof_search::config::SearchResult::Timeout { .. } => "timeout",
+                    };
+                    if tactics.is_empty() {
+                        eprintln!("[tactic-search] Line {line}: {status}");
+                    } else {
                         eprintln!(
-                            "[tactic-search] Line {line}: {} (tactics: {})",
-                            if solved { "SOLVED" } else { "partial" },
+                            "[tactic-search] Line {line}: {status} (tactics: {})",
                             tactics.join("; ")
                         );
                     }
