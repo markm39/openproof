@@ -234,7 +234,7 @@ pub async fn drain_sync_queue(
         })
         .collect();
 
-    match cloud_client
+    let result = match cloud_client
         .upload_verified_batch(visibility_scope, items, auth)
         .await
     {
@@ -247,11 +247,11 @@ pub async fn drain_sync_queue(
                 })
                 .await;
             }
-            Ok(DrainSyncResult {
+            DrainSyncResult {
                 sent: candidates.len(),
                 failed: 0,
                 skipped: false,
-            })
+            }
         }
         Err(_) => {
             for job in &pending_jobs {
@@ -262,11 +262,39 @@ pub async fn drain_sync_queue(
                 })
                 .await;
             }
-            Ok(DrainSyncResult {
+            DrainSyncResult {
                 sent: 0,
                 failed: pending_jobs.len(),
                 skipped: false,
-            })
+            }
         }
+    };
+
+    // Also sync failed attempts to cloud
+    let failure_jobs: Vec<_> = {
+        let store = store.clone();
+        tokio::task::spawn_blocking(move || store.list_sync_jobs_full(200))
+            .await??
     }
+    .into_iter()
+    .filter(|j| j.status == "pending" && j.queue_type == "attempt.failure")
+    .collect();
+
+    for job in &failure_jobs {
+        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&job.payload_json) {
+            if let Some(attempts) = payload.get("attempts").and_then(|v| v.as_array()) {
+                for attempt in attempts {
+                    if let Err(e) = cloud_client.upload_failed_attempt(attempt.clone()).await {
+                        eprintln!("[sync] Failed attempt upload error: {e}");
+                    }
+                }
+            }
+        }
+        let store = store.clone();
+        let jid = job.id.clone();
+        let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
+            .await;
+    }
+
+    Ok(result)
 }

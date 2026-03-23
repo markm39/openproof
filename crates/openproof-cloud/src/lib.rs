@@ -373,6 +373,30 @@ impl CloudCorpusClient {
         Ok(hits)
     }
 
+    /// Upload a failed attempt to the cloud for cross-session learning.
+    pub async fn upload_failed_attempt(
+        &self,
+        attempt: serde_json::Value,
+    ) -> Result<()> {
+        let base_url = match self.base_url() {
+            Some(url) => url,
+            None => return Ok(()),
+        };
+        let response = self
+            .client
+            .post(format!("{base_url}/api/v1/uploads/failed-attempts"))
+            .json(&serde_json::json!({ "attempts": [attempt] }))
+            .send()
+            .await
+            .context("failed attempt upload request failed")?;
+        if !response.status().is_success() {
+            let status = response.status();
+            let detail = response.text().await.unwrap_or_default();
+            anyhow::bail!("failed attempt upload returned {status}: {detail}");
+        }
+        Ok(())
+    }
+
     /// Search for failed attempts on the cloud corpus.
     pub async fn search_failures(
         &self,

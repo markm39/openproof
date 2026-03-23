@@ -524,6 +524,19 @@ pub fn run_autonomous_step(
         if let Some(summary) = latest_session.proof.strategy_summary.as_ref().filter(|s| !s.trim().is_empty()) {
             ctx.push_str(&format!("Strategy: {summary}\n\n"));
         }
+        // Include past failed attempts so branches don't repeat them
+        let target_label = latest_session.proof.nodes.first()
+            .map(|n| n.label.as_str())
+            .unwrap_or(&latest_session.title);
+        if let Ok(failed) = store.failed_attempts_for_target(target_label, 5) {
+            if !failed.is_empty() {
+                ctx.push_str("PREVIOUSLY FAILED APPROACHES (do NOT repeat these):\n");
+                for (class, snippet, diag) in &failed {
+                    ctx.push_str(&format!("  [{class}] {snippet} -> {diag}\n"));
+                }
+                ctx.push('\n');
+            }
+        }
         // Explicit tool instructions
         ctx.push_str(
             "INSTRUCTIONS: Use tools to work on this code.\n\

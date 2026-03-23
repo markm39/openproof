@@ -335,6 +335,8 @@ impl AppStore {
             let attempt_hash = stable_hash(
                 format!("{}::{}::{}", node.statement, node.content, failure_class).as_str(),
             );
+            let diagnostic_summary = summarize_lean_diagnostic(result);
+            let snippet_short = &node.content[..node.content.len().min(200)];
             tx.execute(
                 r#"
                 INSERT INTO attempt_logs
@@ -348,21 +350,46 @@ impl AppStore {
                 "#,
                 params![
                     next_store_id("attempt"),
-                    attempt_hash,
+                    &attempt_hash,
                     session.id,
                     stable_hash(node.statement.as_str()),
                     node.label,
                     node.statement,
                     node.id,
-                    failure_class,
+                    &failure_class,
                     node.content,
                     result.rendered_scratch,
-                    summarize_lean_diagnostic(result),
+                    &diagnostic_summary,
                     serde_json::to_string(&session.proof.imports)?,
                     serde_json::to_string(&serde_json::json!({
                         "workspaceRoot": session.workspace_root,
                         "workspaceLabel": session.workspace_label
                     }))?,
+                    now,
+                    now,
+                ],
+            )?;
+
+            // Queue failure for cloud sync so future sessions learn from it
+            let failure_payload = serde_json::json!({
+                "attempts": [{
+                    "attemptHash": &attempt_hash,
+                    "targetLabel": node.label,
+                    "targetStatement": node.statement,
+                    "failureClass": &failure_class,
+                    "snippet": snippet_short,
+                    "diagnostic": &diagnostic_summary,
+                }]
+            });
+            tx.execute(
+                r#"
+                INSERT INTO sync_queue (id, session_id, queue_type, payload_json, status, created_at, updated_at)
+                VALUES (?, ?, 'attempt.failure', ?, 'pending', ?, ?)
+                "#,
+                params![
+                    next_store_id("sync"),
+                    session.id,
+                    serde_json::to_string(&failure_payload)?,
                     now,
                     now,
                 ],
