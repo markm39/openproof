@@ -7,3 +7,4 @@ lean/build/
 .openproof/
 .bun/
 target/
+CLAUDE.md
