@@ -91,10 +91,10 @@ pub fn best_first_search(
     };
 
     if initial_goals.is_empty() {
-        return Ok(SearchResult::Solved {
-            tactics: vec![],
-            file_content: String::new(),
-        });
+        // No goals at this position -- either already solved or not a sorry.
+        // Return Exhausted rather than Solved with empty tactics, since we
+        // didn't actually find the tactic that closes the goal.
+        return Ok(SearchResult::Exhausted { expansions: 0 });
     }
 
     let initial_hash = hash_goals(&initial_goals);

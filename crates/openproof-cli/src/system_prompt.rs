@@ -104,10 +104,14 @@ fn tools_and_workflow_section() -> &'static str {
 
         "### Lean tools\n",
         "- `lean_verify(file)`: Compile a .lean file. Returns errors, warnings, goals. ALWAYS verify after patching.\n",
-        "- `lean_goals(file)`: Extract structured proof goals at each sorry position. Shows hypotheses and targets.\n",
-        "- `lean_screen_tactics(file, line, tactics)`: Try multiple tactics at a sorry WITHOUT modifying the file. Much faster than patch+recompile. Use 3+ tactics.\n",
-        "- `lean_check(expr)`: Look up the type of a Mathlib lemma. Use when you get an unknown identifier error.\n",
+        "- `lean_goals(file)`: Extract structured proof goals at each sorry. USE THIS after lean_verify to see ",
+        "exactly what needs to be proved (hypotheses, target type). Critical for understanding what tactic to try.\n",
+        "- `lean_screen_tactics(file, line, tactics)`: Try multiple tactics at a sorry WITHOUT modifying the file. ",
+        "Pass an array of 5-10 tactics. Returns which ones work. MUCH faster than patch+recompile for each. ",
+        "Example: `lean_screen_tactics({\"file\":\"Main.lean\",\"line\":25,\"tactics\":[\"simp\",\"omega\",\"ring\",\"exact?\",\"apply?\"]})`\n",
+        "- `lean_check(expr)`: Look up the type of a Mathlib lemma.\n",
         "- `lean_search_tactic(tactic, file, line)`: Run exact?/apply?/rw? at a sorry. Lean searches Mathlib.\n\n",
+        "WORKFLOW FOR EACH SORRY: lean_goals to see the goal -> lean_screen_tactics to find a working tactic -> file_patch to apply it -> lean_verify to confirm.\n\n",
 
         "### Research & computation tools\n",
         "- `corpus_search(query)`: Search 190K+ verified Mathlib declarations + user proofs.\n",
@@ -505,17 +509,19 @@ pub async fn build_branch_turn_messages(
                 AgentRole::Prover => {
                     concat!(
                         "Fill the sorry in the existing code. Do NOT change the theorem statement. ",
-                        "Strategy: decompose the sorry into `have` steps with sub-sorrys, verify the skeleton compiles, ",
-                        "then fill sub-sorrys one at a time. Use lean_search_tactic (exact?, apply?) on stuck goals. ",
-                        "Use corpus_search to find relevant Mathlib lemmas. Use shell_run with sage for computation. ",
-                        "You MUST use tools: file_read, file_patch, lean_verify. Iterate until sorry count decreases.",
+                        "For EACH sorry: lean_goals to see what needs proving, lean_screen_tactics to batch-test ",
+                        "approaches (simp, omega, ring, exact?, apply?, linarith, norm_num, aesop), ",
+                        "then file_patch to apply the working tactic. ",
+                        "If no standard tactic works, decompose the sorry into `have` steps. ",
+                        "You MUST use tools. Iterate: lean_goals -> lean_screen_tactics -> file_patch -> lean_verify.",
                     ).to_string()
                 }
                 AgentRole::Repairer => {
                     concat!(
-                        "Focus on repairing the current Lean candidate using the latest diagnostics. ",
-                        "You MUST use tools: file_read to see the code, then file_patch to fix it, then lean_verify to check. ",
-                        "Do NOT output patches as text. Use the file_patch tool.",
+                        "Repair the current Lean candidate using the latest diagnostics. ",
+                        "For each error: file_read the code, lean_goals to see the goal state, ",
+                        "lean_screen_tactics to batch-test fixes, then file_patch to apply the fix. ",
+                        "Do NOT output patches as text. Use the file_patch tool. Then lean_verify.",
                     ).to_string()
                 }
                 AgentRole::Critic => {
