@@ -238,30 +238,47 @@ pub async fn run_autonomous(
     // the "No target extracted" fallback creates them above.
     {
         let session_id = state.current_session().map(|s| s.id.clone()).unwrap_or_default();
-        if let Some(scratch) = store.read_scratch(&session_id) {
-            if !scratch.trim().is_empty() {
-                if let Some(s) = state.current_session_mut() {
-                    // Ensure active_node_id is set -- fall back to first node
-                    if s.proof.active_node_id.is_none() {
-                        if let Some(first) = s.proof.nodes.first() {
-                            eprintln!("[run] Setting active_node_id to first node: {}", first.label);
-                            s.proof.active_node_id = Some(first.id.clone());
+        // Read ALL .lean files from workspace (model may use Main.lean, Defs.lean, etc.)
+        let ws_dir = store.workspace_dir(&session_id);
+        let mut all_lean = String::new();
+        if let Ok(files) = store.list_workspace_files(&session_id) {
+            for (path, _) in &files {
+                if path.ends_with(".lean") && !path.contains("history/") {
+                    if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
+                        if !all_lean.is_empty() {
+                            all_lean.push_str("\n\n");
                         }
+                        all_lean.push_str(&content);
                     }
-                    if let Some(node_id) = s.proof.active_node_id.clone() {
-                        if let Some(node) = s.proof.nodes.iter_mut().find(|n| n.id == node_id) {
-                            if node.content.trim().is_empty() {
-                                eprintln!("[run] Syncing workspace Scratch.lean -> node.content ({} chars)", scratch.len());
-                                node.content = scratch;
-                                node.status = openproof_protocol::ProofNodeStatus::Proving;
-                            }
+                }
+            }
+        }
+        if all_lean.is_empty() {
+            if let Some(scratch) = store.read_scratch(&session_id) {
+                all_lean = scratch;
+            }
+        }
+        if !all_lean.trim().is_empty() {
+            if let Some(s) = state.current_session_mut() {
+                if s.proof.active_node_id.is_none() {
+                    if let Some(first) = s.proof.nodes.first() {
+                        eprintln!("[run] Setting active_node_id to first node: {}", first.label);
+                        s.proof.active_node_id = Some(first.id.clone());
+                    }
+                }
+                if let Some(node_id) = s.proof.active_node_id.clone() {
+                    if let Some(node) = s.proof.nodes.iter_mut().find(|n| n.id == node_id) {
+                        if node.content.trim().is_empty() {
+                            eprintln!("[run] Syncing workspace -> node.content ({} chars)", all_lean.len());
+                            node.content = all_lean;
+                            node.status = openproof_protocol::ProofNodeStatus::Proving;
                         }
                     }
                 }
-                if let Some(session) = state.current_session().cloned() {
-                    let s = store.clone();
-                    let _ = tokio::task::spawn_blocking(move || s.save_session(&session)).await;
-                }
+            }
+            if let Some(session) = state.current_session().cloned() {
+                let s = store.clone();
+                let _ = tokio::task::spawn_blocking(move || s.save_session(&session)).await;
             }
         }
     }
@@ -456,14 +473,31 @@ pub async fn run_autonomous(
         // Sync workspace content after branch turns (branches may have written files)
         {
             let sid = state.current_session().map(|s| s.id.clone()).unwrap_or_default();
-            if let Some(scratch) = store.read_scratch(&sid) {
-                if !scratch.trim().is_empty() {
-                    if let Some(s) = state.current_session_mut() {
-                        if let Some(node_id) = s.proof.active_node_id.clone() {
-                            if let Some(node) = s.proof.nodes.iter_mut().find(|n| n.id == node_id) {
-                                if node.content.trim().is_empty() || node.content != scratch {
-                                    node.content = scratch;
-                                }
+            let ws_dir = store.workspace_dir(&sid);
+            let mut all_lean = String::new();
+            if let Ok(files) = store.list_workspace_files(&sid) {
+                for (path, _) in &files {
+                    if path.ends_with(".lean") && !path.contains("history/") {
+                        if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
+                            if !all_lean.is_empty() {
+                                all_lean.push_str("\n\n");
+                            }
+                            all_lean.push_str(&content);
+                        }
+                    }
+                }
+            }
+            if all_lean.is_empty() {
+                if let Some(scratch) = store.read_scratch(&sid) {
+                    all_lean = scratch;
+                }
+            }
+            if !all_lean.trim().is_empty() {
+                if let Some(s) = state.current_session_mut() {
+                    if let Some(node_id) = s.proof.active_node_id.clone() {
+                        if let Some(node) = s.proof.nodes.iter_mut().find(|n| n.id == node_id) {
+                            if node.content.trim().is_empty() || node.content != all_lean {
+                                node.content = all_lean;
                             }
                         }
                     }

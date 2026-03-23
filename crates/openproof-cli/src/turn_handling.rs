@@ -239,15 +239,34 @@ pub async fn run_agentic_loop(
         }
     }
 
-    // After tool loop: sync workspace content to node.content
+    // After tool loop: sync workspace content to node.content.
+    // Read all .lean files from workspace (model may use Main.lean, Defs.lean, etc.)
     if turn_used_tools {
-        if let Some(scratch) = store.read_scratch(session_id) {
-            if !scratch.trim().is_empty() {
-                let _ = tx.send(AppEvent::WorkspaceContentSync {
-                    content: scratch,
-                    verified: last_verify_ok,
-                });
+        let workspace_dir = store.workspace_dir(session_id);
+        let mut all_lean = String::new();
+        if let Ok(files) = store.list_workspace_files(session_id) {
+            for (path, _) in &files {
+                if path.ends_with(".lean") && !path.contains("history/") {
+                    if let Ok(content) = std::fs::read_to_string(workspace_dir.join(path)) {
+                        if !all_lean.is_empty() {
+                            all_lean.push_str("\n\n");
+                        }
+                        all_lean.push_str(&content);
+                    }
+                }
             }
+        }
+        // Fallback: try Scratch.lean directly
+        if all_lean.is_empty() {
+            if let Some(scratch) = store.read_scratch(session_id) {
+                all_lean = scratch;
+            }
+        }
+        if !all_lean.trim().is_empty() {
+            let _ = tx.send(AppEvent::WorkspaceContentSync {
+                content: all_lean,
+                verified: last_verify_ok,
+            });
         }
     }
 
@@ -376,13 +395,30 @@ pub fn start_agent_branch_turn(
 
         // After tool loop: sync workspace content to node.content
         if turn_used_tools {
-            if let Some(scratch) = store.read_scratch(&session_snapshot.id) {
-                if !scratch.trim().is_empty() {
-                    let _ = tx.send(AppEvent::WorkspaceContentSync {
-                        content: scratch,
-                        verified: last_verify_ok,
-                    });
+            let ws_dir = store.workspace_dir(&session_snapshot.id);
+            let mut all_lean = String::new();
+            if let Ok(files) = store.list_workspace_files(&session_snapshot.id) {
+                for (path, _) in &files {
+                    if path.ends_with(".lean") && !path.contains("history/") {
+                        if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
+                            if !all_lean.is_empty() {
+                                all_lean.push_str("\n\n");
+                            }
+                            all_lean.push_str(&content);
+                        }
+                    }
                 }
+            }
+            if all_lean.is_empty() {
+                if let Some(scratch) = store.read_scratch(&session_snapshot.id) {
+                    all_lean = scratch;
+                }
+            }
+            if !all_lean.trim().is_empty() {
+                let _ = tx.send(AppEvent::WorkspaceContentSync {
+                    content: all_lean,
+                    verified: last_verify_ok,
+                });
             }
         }
 
