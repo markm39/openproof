@@ -17,6 +17,7 @@ pub fn tool_definitions() -> Vec<Value> {
         file_patch_tool(),
         workspace_ls_tool(),
         corpus_search_tool(),
+        shell_run_tool(),
     ]
 }
 
@@ -200,6 +201,25 @@ fn workspace_ls_tool() -> Value {
             "type": "object",
             "properties": {},
             "required": [],
+            "additionalProperties": false
+        }
+    })
+}
+
+fn shell_run_tool() -> Value {
+    json!({
+        "type": "function",
+        "name": "shell_run",
+        "description": "Run a shell command for computation. Use sage for symbolic math (series, bounds, enumeration), python3 for numerical exploration, or other CLI tools. Timeout: 30 seconds. Output truncated to 4000 chars.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "The shell command to run, e.g. \"sage -c 'print(sum(1/fibonacci(k) for k in range(2,20)).n())'\" or \"python3 -c 'import math; print(math.sqrt(3))'\""
+                }
+            },
+            "required": ["command"],
             "additionalProperties": false
         }
     })

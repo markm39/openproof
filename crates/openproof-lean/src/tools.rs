@@ -45,6 +45,7 @@ pub fn execute_tool(name: &str, arguments: &str, ctx: &ToolContext) -> ToolOutpu
         "file_write" => tool_file_write(&args, ctx),
         "file_patch" => tool_file_patch(&args, ctx),
         "workspace_ls" => tool_workspace_ls(ctx),
+        "shell_run" => tool_shell_run(&args, ctx),
         _ => Err(anyhow::anyhow!("unknown tool: {name}")),
     };
     match result {
@@ -428,4 +429,45 @@ fn walk_dir(base: &Path, current: &Path, out: &mut Vec<String>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Shell timeout for computation commands.
+const SHELL_TIMEOUT_SECS: u64 = 30;
+
+fn tool_shell_run(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
+    let command = args
+        .get("command")
+        .and_then(Value::as_str)
+        .context("missing 'command' argument")?;
+
+    // Use `timeout` command on macOS/Linux to enforce time limit
+    let output = Command::new("sh")
+        .arg("-c")
+        .arg(format!("timeout {SHELL_TIMEOUT_SECS} sh -c {}", shell_escape(command)))
+        .current_dir(ctx.workspace_dir)
+        .output()
+        .context("failed to run shell command")?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = if stderr.is_empty() {
+        stdout.to_string()
+    } else {
+        format!("{stdout}\n--- stderr ---\n{stderr}")
+    };
+
+    // Exit code 124 = timeout killed the process
+    let timed_out = output.status.code() == Some(124);
+    Ok(ToolOutput {
+        success: output.status.success() && !timed_out,
+        content: if timed_out {
+            format!("Command timed out after {SHELL_TIMEOUT_SECS}s\n{combined}")
+        } else {
+            truncate_output(&combined)
+        },
+    })
+}
+
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
