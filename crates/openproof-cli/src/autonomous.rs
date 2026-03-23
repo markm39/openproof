@@ -966,34 +966,44 @@ fn spawn_tactic_search_for_sorrys(
     session: &openproof_protocol::SessionSnapshot,
     store: &AppStore,
 ) {
-    let content = session.proof.nodes.first()
-        .map(|n| n.content.as_str())
-        .unwrap_or("");
-    if content.trim().is_empty() {
-        return;
-    }
-
-    let sorry_positions = openproof_lean::find_sorry_positions(content);
-    if sorry_positions.is_empty() {
-        return;
-    }
-
     let node_id = session.proof.active_node_id.clone().unwrap_or_default();
     let project_dir = crate::helpers::resolve_lean_project_dir();
     let workspace_dir = store.workspace_dir(&session.id);
 
-    // Write the current content to the Lean project dir for the LSP to read.
+    // Read ALL workspace .lean files and concatenate for sorry analysis.
+    // The workspace files (Main.lean, Helpers.lean) are the source of truth.
+    let mut full_content = String::new();
+    if let Ok(files) = store.list_workspace_files(&session.id) {
+        for (path, _) in &files {
+            if path.ends_with(".lean") && !path.contains("history/") {
+                if let Ok(content) = std::fs::read_to_string(workspace_dir.join(path)) {
+                    if !full_content.is_empty() {
+                        full_content.push_str("\n\n");
+                    }
+                    full_content.push_str(&content);
+                }
+            }
+        }
+    }
+    // Fallback to node.content
+    if full_content.trim().is_empty() {
+        full_content = session.proof.nodes.first()
+            .map(|n| n.content.clone())
+            .unwrap_or_default();
+    }
+    if full_content.trim().is_empty() {
+        return;
+    }
+
+    let sorry_positions = openproof_lean::find_sorry_positions(&full_content);
+    if sorry_positions.is_empty() {
+        return;
+    }
+
+    // Write the full content to the Lean project dir for the LSP to read.
     // The MCP requires files to be inside a Lean project (with lean-toolchain).
     let scratch_path = project_dir.join("Scratch.lean");
-    if let Some(rendered) = session.proof.last_rendered_scratch.as_deref() {
-        let _ = std::fs::write(&scratch_path, rendered);
-    } else if !content.trim().is_empty() {
-        let rendered = openproof_lean::render_node_scratch(
-            session,
-            session.proof.nodes.first().unwrap(),
-        );
-        let _ = std::fs::write(&scratch_path, &rendered);
-    }
+    let _ = std::fs::write(&scratch_path, &full_content);
 
     // Spawn MCP client for the search tasks
     let lsp_mcp = match LeanLspMcp::spawn(&project_dir) {
