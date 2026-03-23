@@ -425,11 +425,14 @@ pub async fn run_autonomous(
     for iteration in 1..=max_iterations {
         let session = state.current_session().cloned().unwrap();
 
-        // Headless mode: only stop when ALL nodes are verified or clarification needed
+        // Headless mode: only stop when ALL nodes are truly verified (no sorry)
         let all_verified = !session.proof.nodes.is_empty()
-            && session.proof.nodes.iter().all(|n| n.status == openproof_protocol::ProofNodeStatus::Verified);
+            && session.proof.nodes.iter().all(|n| {
+                n.status == openproof_protocol::ProofNodeStatus::Verified
+                    && !n.content.contains("sorry")
+            });
         if all_verified {
-            eprintln!("[run] All proof nodes verified!");
+            eprintln!("[run] All proof nodes verified (no sorry)!");
             break;
         }
         if session.proof.pending_question.is_some() || session.proof.awaiting_clarification {
@@ -497,7 +500,13 @@ pub async fn run_autonomous(
                     if let Some(node_id) = s.proof.active_node_id.clone() {
                         if let Some(node) = s.proof.nodes.iter_mut().find(|n| n.id == node_id) {
                             if node.content.trim().is_empty() || node.content != all_lean {
-                                node.content = all_lean;
+                                node.content = all_lean.clone();
+                                // Reset verified status if new content has sorry
+                                if all_lean.contains("sorry")
+                                    && node.status == openproof_protocol::ProofNodeStatus::Verified
+                                {
+                                    node.status = openproof_protocol::ProofNodeStatus::Proving;
+                                }
                             }
                         }
                     }
@@ -525,9 +534,12 @@ pub async fn run_autonomous(
             // In full_autonomous mode, don't stop on first verification.
             // Keep pushing -- verified sub-lemmas are progress but not the goal.
             let all_verified = session.proof.nodes.iter()
-                .all(|n| n.status == openproof_protocol::ProofNodeStatus::Verified);
+                .all(|n| {
+                    n.status == openproof_protocol::ProofNodeStatus::Verified
+                        && !n.content.contains("sorry")
+                });
             if all_verified {
-                eprintln!("[run] All nodes verified -- stopping.");
+                eprintln!("[run] All nodes verified (no sorry) -- stopping.");
                 break;
             }
             eprintln!("[run] Continuing -- not all nodes verified yet.");
