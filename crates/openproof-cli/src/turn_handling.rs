@@ -193,6 +193,7 @@ pub async fn run_agentic_loop(
                                     project_dir: &project_dir,
                                     workspace_dir: &workspace_dir,
                                     imports: &imports,
+                                    lsp_mcp: None,
                                 };
                                 execute_tool(&name, &arguments, &ctx)
                             }
@@ -365,6 +366,7 @@ pub fn start_agent_branch_turn(
                                         project_dir: &project_dir,
                                         workspace_dir: &workspace_dir,
                                         imports: &imports,
+                                        lsp_mcp: None,
                                     };
                                     execute_tool(&name, &arguments, &ctx)
                                 }

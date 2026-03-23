@@ -8,7 +8,10 @@ use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use crate::lsp_mcp::LeanLspMcp;
 
 /// Maximum output size returned to the model (characters).
 const MAX_OUTPUT_CHARS: usize = 8000;
@@ -24,6 +27,8 @@ pub struct ToolContext<'a> {
     pub workspace_dir: &'a Path,
     /// Current import list for the session.
     pub imports: &'a [String],
+    /// Optional lean-lsp-mcp client for structured goal access.
+    pub lsp_mcp: Option<Arc<Mutex<LeanLspMcp>>>,
 }
 
 /// Result of executing a tool.
@@ -38,8 +43,10 @@ pub fn execute_tool(name: &str, arguments: &str, ctx: &ToolContext) -> ToolOutpu
     let args: Value = serde_json::from_str(arguments).unwrap_or(Value::Object(Default::default()));
     let result = match name {
         "lean_verify" => tool_lean_verify(&args, ctx),
+        "lean_goals" => tool_lean_goals(&args, ctx),
+        "lean_screen_tactics" => tool_lean_screen_tactics(&args, ctx),
         "lean_check" => tool_lean_check(&args, ctx),
-        "lean_eval" => tool_lean_eval(&args, ctx),
+        "lean_eval" => tool_lean_eval_fn(&args, ctx),
         "lean_search_tactic" => tool_lean_search_tactic(&args, ctx),
         "file_read" => tool_file_read(&args, ctx),
         "file_write" => tool_file_write(&args, ctx),
@@ -89,6 +96,222 @@ fn tool_lean_verify(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
     })
 }
 
+fn tool_lean_goals(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
+    let file = args
+        .get("file")
+        .and_then(Value::as_str)
+        .unwrap_or("Scratch.lean");
+    let target = sanitize_path(ctx.workspace_dir, file)?;
+
+    // Try MCP first for structured goals
+    if let Some(ref lsp) = ctx.lsp_mcp {
+        if let Ok(mut mcp) = lsp.lock() {
+            if mcp.is_alive() {
+                // Query goal state at each sorry position
+                let content = fs::read_to_string(&target)
+                    .with_context(|| format!("reading {file}"))?;
+                let sorry_positions = find_sorry_positions(&content);
+
+                if sorry_positions.is_empty() {
+                    return Ok(ToolOutput {
+                        success: true,
+                        content: "No sorry positions found in the file.".to_string(),
+                    });
+                }
+
+                let mut output_parts = Vec::new();
+                for (line, _col) in &sorry_positions {
+                    match mcp.get_goals(&target, *line, None) {
+                        Ok(goal_state) => {
+                            let goals = goal_state.goals_before.as_ref()
+                                .or(goal_state.goals.as_ref())
+                                .map(|g| g.join("\n---\n"))
+                                .unwrap_or_else(|| "(no goals)".to_string());
+                            output_parts.push(format!(
+                                "Line {line}:\n{goals}"
+                            ));
+                        }
+                        Err(e) => {
+                            output_parts.push(format!("Line {line}: error: {e}"));
+                        }
+                    }
+                }
+
+                return Ok(ToolOutput {
+                    success: true,
+                    content: truncate_output(&output_parts.join("\n\n")),
+                });
+            }
+        }
+    }
+
+    // Fallback: use regex-based goal extraction
+    let content = fs::read_to_string(&target)
+        .with_context(|| format!("reading {file}"))?;
+
+    let full_content = if content.trim_start().starts_with("import ") {
+        content
+    } else {
+        let imports = build_import_block(ctx.imports);
+        format!("{imports}\n{content}")
+    };
+
+    match crate::goals::extract_sorry_goals(ctx.project_dir, &full_content) {
+        Ok(goals) if goals.is_empty() => Ok(ToolOutput {
+            success: true,
+            content: "No sorry goals found.".to_string(),
+        }),
+        Ok(goals) => {
+            let formatted: Vec<String> = goals
+                .iter()
+                .map(|(line, goal)| format!("Line {line}:\n{goal}"))
+                .collect();
+            Ok(ToolOutput {
+                success: true,
+                content: truncate_output(&formatted.join("\n\n")),
+            })
+        }
+        Err(e) => Ok(ToolOutput {
+            success: false,
+            content: truncate_output(&format!("Goal extraction failed: {e}")),
+        }),
+    }
+}
+
+fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
+    let file = args
+        .get("file")
+        .and_then(Value::as_str)
+        .unwrap_or("Scratch.lean");
+    let line = args
+        .get("line")
+        .and_then(Value::as_u64)
+        .context("missing 'line' argument")? as usize;
+    let tactics: Vec<String> = args
+        .get("tactics")
+        .and_then(Value::as_array)
+        .context("missing 'tactics' argument")?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect();
+
+    if tactics.is_empty() {
+        return Ok(ToolOutput {
+            success: false,
+            content: "No tactics provided.".to_string(),
+        });
+    }
+
+    let target = sanitize_path(ctx.workspace_dir, file)?;
+
+    // Try MCP for multi-attempt screening
+    if let Some(ref lsp) = ctx.lsp_mcp {
+        if let Ok(mut mcp) = lsp.lock() {
+            if mcp.is_alive() {
+                match mcp.screen_tactics(&target, line, None, &tactics) {
+                    Ok(result) => {
+                        let mut parts = Vec::new();
+                        for item in &result.items {
+                            let status = if item.is_solved() {
+                                "SOLVED"
+                            } else if item.succeeded() {
+                                "ok"
+                            } else {
+                                "FAILED"
+                            };
+                            let mut entry = format!("[{status}] {}", item.snippet);
+                            if !item.goals.is_empty() {
+                                entry.push_str(&format!(
+                                    "\n  Goals: {}",
+                                    item.goals.join(" | ")
+                                ));
+                            }
+                            for diag in &item.diagnostics {
+                                if diag.severity == "error" {
+                                    entry.push_str(&format!(
+                                        "\n  Error: {}",
+                                        diag.message.lines().next().unwrap_or("")
+                                    ));
+                                }
+                            }
+                            parts.push(entry);
+                        }
+                        return Ok(ToolOutput {
+                            success: true,
+                            content: truncate_output(&parts.join("\n")),
+                        });
+                    }
+                    Err(e) => {
+                        // Fall through to fallback
+                        eprintln!("lean_screen_tactics MCP error: {e}");
+                    }
+                }
+            }
+        }
+    }
+
+    // Fallback: try each tactic via lean_search_tactic one at a time
+    let content = fs::read_to_string(&target)
+        .with_context(|| format!("reading {file}"))?;
+
+    let full_content = if content.trim_start().starts_with("import ") {
+        content
+    } else {
+        let imports = build_import_block(ctx.imports);
+        format!("{imports}\n{content}")
+    };
+
+    let mut parts = Vec::new();
+    for tactic in &tactics {
+        let modified = replace_sorry_at_line(&full_content, line, tactic);
+        let scratch_path = write_temp_file(&modified)?;
+        let (ok, output) = run_lean_command(ctx.project_dir, &scratch_path)?;
+        let status = if ok && !output.contains("sorry") {
+            "SOLVED"
+        } else if ok {
+            "ok"
+        } else {
+            "FAILED"
+        };
+        let first_error = output.lines()
+            .find(|l| l.contains("error"))
+            .unwrap_or("")
+            .trim();
+        let mut entry = format!("[{status}] {tactic}");
+        if !first_error.is_empty() && status == "FAILED" {
+            entry.push_str(&format!("\n  Error: {first_error}"));
+        }
+        parts.push(entry);
+    }
+
+    Ok(ToolOutput {
+        success: true,
+        content: truncate_output(&parts.join("\n")),
+    })
+}
+
+/// Find (line, column) positions of all `sorry` tokens in content.
+fn find_sorry_positions(content: &str) -> Vec<(usize, usize)> {
+    let mut positions = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        let mut start = 0;
+        while let Some(pos) = line[start..].find("sorry") {
+            let abs_pos = start + pos;
+            // Check it's a word boundary (not part of a larger identifier)
+            let before_ok = abs_pos == 0
+                || !line.as_bytes()[abs_pos - 1].is_ascii_alphanumeric();
+            let after_pos = abs_pos + 5;
+            let after_ok = after_pos >= line.len()
+                || !line.as_bytes()[after_pos].is_ascii_alphanumeric();
+            if before_ok && after_ok {
+                positions.push((i + 1, abs_pos + 1)); // 1-indexed
+            }
+            start = abs_pos + 5;
+        }
+    }
+    positions
+}
+
 fn tool_lean_check(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
     let expr = args
         .get("expr")
@@ -104,7 +327,7 @@ fn tool_lean_check(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
     })
 }
 
-fn tool_lean_eval(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
+fn tool_lean_eval_fn(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
     let expr = args
         .get("expr")
         .and_then(Value::as_str)

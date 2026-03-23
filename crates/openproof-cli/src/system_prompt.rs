@@ -104,6 +104,8 @@ fn tools_and_workflow_section() -> &'static str {
 
         "### Lean tools\n",
         "- `lean_verify(file)`: Compile a .lean file. Returns errors, warnings, goals. ALWAYS verify after patching.\n",
+        "- `lean_goals(file)`: Extract structured proof goals at each sorry position. Shows hypotheses and targets.\n",
+        "- `lean_screen_tactics(file, line, tactics)`: Try multiple tactics at a sorry WITHOUT modifying the file. Much faster than patch+recompile. Use 3+ tactics.\n",
         "- `lean_check(expr)`: Look up the type of a Mathlib lemma. Use when you get an unknown identifier error.\n",
         "- `lean_search_tactic(tactic, file, line)`: Run exact?/apply?/rw? at a sorry. Lean searches Mathlib.\n\n",
 

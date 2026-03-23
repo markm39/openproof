@@ -9,6 +9,8 @@ use serde_json::{json, Value};
 pub fn tool_definitions() -> Vec<Value> {
     vec![
         lean_verify_tool(),
+        lean_goals_tool(),
+        lean_screen_tactics_tool(),
         lean_check_tool(),
         lean_eval_tool(),
         lean_search_tactic_tool(),
@@ -36,6 +38,55 @@ fn lean_verify_tool() -> Value {
                 }
             },
             "required": [],
+            "additionalProperties": false
+        }
+    })
+}
+
+fn lean_goals_tool() -> Value {
+    json!({
+        "type": "function",
+        "name": "lean_goals",
+        "description": "Extract structured proof goal states at each sorry position in a Lean file. Returns hypotheses and targets for each unsolved goal. Use after lean_verify to understand what needs to be proved at each sorry.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "description": "Relative path to the .lean file. Defaults to 'Scratch.lean'.",
+                    "default": "Scratch.lean"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        }
+    })
+}
+
+fn lean_screen_tactics_tool() -> Value {
+    json!({
+        "type": "function",
+        "name": "lean_screen_tactics",
+        "description": "Try multiple tactics at a sorry position WITHOUT modifying the file. Returns the resulting goal state and diagnostics for each tactic. Much faster than patching + recompiling for each attempt. Use this to quickly test several proof approaches.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file": {
+                    "type": "string",
+                    "description": "Relative path to the .lean file.",
+                    "default": "Scratch.lean"
+                },
+                "line": {
+                    "type": "integer",
+                    "description": "1-based line number of the sorry position to try tactics at."
+                },
+                "tactics": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "List of tactic strings to try, e.g. [\"simp\", \"ring\", \"omega\", \"exact?\"]. 3+ recommended."
+                }
+            },
+            "required": ["line", "tactics"],
             "additionalProperties": false
         }
     })
