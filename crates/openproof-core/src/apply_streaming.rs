@@ -133,18 +133,22 @@ impl AppState {
                     .iter_mut()
                     .find(|node| node.id == node_id)
                 {
-                    node.status = if result.ok {
+                    // Never mark verified if the content still has sorry
+                    let truly_ok = result.ok
+                        && !node.content.contains("sorry")
+                        && !result.rendered_scratch.contains("sorry");
+                    node.status = if truly_ok {
                         ProofNodeStatus::Verified
                     } else {
                         ProofNodeStatus::Failed
                     };
                     node.updated_at = now.clone();
-                    session.proof.phase = if result.ok {
+                    session.proof.phase = if truly_ok {
                         "done".to_string()
                     } else {
                         "repairing".to_string()
                     };
-                    session.proof.status_line = if result.ok {
+                    session.proof.status_line = if truly_ok {
                         format!("Lean verified {}.", node.label)
                     } else {
                         format!("Lean rejected {}.", node.label)
