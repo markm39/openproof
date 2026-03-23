@@ -423,6 +423,15 @@ pub async fn run_autonomous(
 
     let max_iterations = 100; // Open problems need many iterations
     for iteration in 1..=max_iterations {
+        // Ensure active_node_id is set before each iteration
+        if let Some(s) = state.current_session_mut() {
+            if s.proof.active_node_id.is_none() {
+                if let Some(first) = s.proof.nodes.first() {
+                    s.proof.active_node_id = Some(first.id.clone());
+                }
+            }
+        }
+
         let session = state.current_session().cloned().unwrap();
 
         // Headless mode: only stop when ALL nodes are truly verified (no sorry)

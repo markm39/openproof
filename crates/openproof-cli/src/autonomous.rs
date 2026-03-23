@@ -112,6 +112,40 @@ pub fn run_autonomous_step(
             "Set or accept a formal target before running autonomous search.".to_string()
         })?;
 
+    // Ensure active_node_id is always set. Without it, verification and
+    // branch context building all fail silently.
+    if state.current_session().map(|s| s.proof.active_node_id.is_none()).unwrap_or(false) {
+        if let Some(s) = state.current_session_mut() {
+            if let Some(first) = s.proof.nodes.first() {
+                eprintln!("[auto] Setting active_node_id to first node: {}", first.label);
+                s.proof.active_node_id = Some(first.id.clone());
+            } else {
+                // No nodes at all -- create one from the target
+                eprintln!("[auto] No nodes exist, creating one from target");
+                let node = openproof_protocol::ProofNode {
+                    id: format!("node_{}", chrono::Utc::now().timestamp_millis()),
+                    kind: openproof_protocol::ProofNodeKind::Theorem,
+                    label: s.title.clone(),
+                    statement: target.clone(),
+                    content: String::new(),
+                    status: openproof_protocol::ProofNodeStatus::Pending,
+                    parent_id: None,
+                    depends_on: Vec::new(),
+                    depth: 0,
+                    created_at: chrono::Utc::now().to_rfc3339(),
+                    updated_at: chrono::Utc::now().to_rfc3339(),
+                };
+                s.proof.active_node_id = Some(node.id.clone());
+                s.proof.root_node_id = Some(node.id.clone());
+                s.proof.nodes.push(node);
+            }
+        }
+        // Persist the fix
+        if let Some(session) = state.current_session().cloned() {
+            persist_write(tx.clone(), store.clone(), openproof_core::PendingWrite { session });
+        }
+    }
+
     let next_iteration = session.proof.autonomous_iteration_count.saturating_add(1);
     if let Ok(write) = state.set_autonomous_run_state(AutonomousRunPatch {
         autonomous_iteration_count: Some(next_iteration),
