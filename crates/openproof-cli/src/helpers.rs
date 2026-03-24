@@ -23,18 +23,14 @@ pub fn persist_write(
     write: PendingWrite,
 ) {
     let session_id = write.session.id.clone();
-    // Only auto-generate paper if the model hasn't written one.
-    // If paper_tex already has a \documentclass or \section, the model wrote it -- keep it.
+    // Paper.tex is a workspace file managed by the model via file_write/file_patch.
+    // Read it from the workspace on every save so the dashboard has the latest.
     let mut session = write.session;
-    let has_model_paper = session.proof.paper_tex.contains("\\documentclass")
-        || session.proof.paper_tex.contains("\\begin{proof}")
-        || session.proof.paper_tex.contains("\\begin{theorem}");
-    if !has_model_paper {
-        session.proof.paper_tex = generate_paper_tex(
-            &session.title,
-            session.proof.problem.as_deref().unwrap_or(""),
-            &session.proof.nodes,
-        );
+    let ws_dir = store.workspace_dir(&session.id);
+    if let Ok(paper) = std::fs::read_to_string(ws_dir.join("Paper.tex")) {
+        if !paper.trim().is_empty() {
+            session.proof.paper_tex = paper;
+        }
     }
     let write = PendingWrite { session };
     tokio::spawn(async move {

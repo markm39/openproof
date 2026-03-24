@@ -197,7 +197,14 @@ async fn paper_tex(
     let Some(session) = session else {
         return Ok((StatusCode::NOT_FOUND, "No session").into_response());
     };
-    let tex = generate_tex(&session);
+    // Read Paper.tex directly from workspace (source of truth)
+    let ws_dir = state.store.workspace_dir(&session.id);
+    let paper_file = std::fs::read_to_string(ws_dir.join("Paper.tex")).unwrap_or_default();
+    let tex = if !paper_file.trim().is_empty() {
+        paper_file
+    } else {
+        generate_tex(&session)
+    };
     Ok(([(CONTENT_TYPE, "text/plain; charset=utf-8")], tex).into_response())
 }
 
