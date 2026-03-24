@@ -107,21 +107,41 @@ pub fn run_autonomous_step(
         return Err(reason);
     }
 
-    let target = session
-        .proof
-        .accepted_target
-        .clone()
-        .or(session.proof.formal_target.clone())
+    // Cycle active_node_id to the next unverified root-level node.
+    // This ensures multi-theorem sessions work on each theorem in turn.
+    if let Some(s) = state.current_session_mut() {
+        let current_verified = s.proof.active_node_id.as_deref()
+            .and_then(|id| s.proof.nodes.iter().find(|n| n.id == id))
+            .map(|n| n.status == openproof_protocol::ProofNodeStatus::Verified)
+            .unwrap_or(true); // treat None as "needs cycling"
+        if current_verified || s.proof.active_node_id.is_none() {
+            if let Some(next) = s.proof.nodes.iter().find(|n| {
+                n.depth == 0 && n.status != openproof_protocol::ProofNodeStatus::Verified
+            }) {
+                eprintln!("[auto] Cycling to unverified root: {}", next.label);
+                s.proof.active_node_id = Some(next.id.clone());
+            }
+        }
+    }
+
+    // Derive target from active node's statement, with fallback for backward compat
+    let active_node = state.current_session()
+        .and_then(|s| s.proof.active_node_id.as_deref()
+            .and_then(|id| s.proof.nodes.iter().find(|n| n.id == id))
+            .cloned());
+    let target = active_node.as_ref()
+        .filter(|n| !n.statement.trim().is_empty())
+        .map(|n| n.statement.clone())
+        .or_else(|| session.proof.accepted_target.clone())
+        .or_else(|| session.proof.formal_target.clone())
         .ok_or_else(|| {
             "Set or accept a formal target before running autonomous search.".to_string()
         })?;
 
-    // Ensure active_node_id is always set. Without it, verification and
-    // branch context building all fail silently.
+    // Ensure active_node_id is set (creates a node if none exist)
     if state.current_session().map(|s| s.proof.active_node_id.is_none()).unwrap_or(false) {
         if let Some(s) = state.current_session_mut() {
             if let Some(first) = s.proof.nodes.first() {
-                eprintln!("[auto] Setting active_node_id to first node: {}", first.label);
                 s.proof.active_node_id = Some(first.id.clone());
             } else {
                 // No nodes at all -- create one from the target

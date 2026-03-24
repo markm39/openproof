@@ -273,7 +273,11 @@ pub async fn run_app(
                                         .find(|n| &n.label == label).map(|n| n.id.clone());
                                 }
                                 if s.proof.active_node_id.is_none() {
-                                    s.proof.active_node_id = s.proof.nodes.first().map(|n| n.id.clone());
+                                    // Prefer first unverified root node
+                                    s.proof.active_node_id = s.proof.nodes.iter()
+                                        .find(|n| n.depth == 0 && n.status != openproof_protocol::ProofNodeStatus::Verified)
+                                        .or_else(|| s.proof.nodes.first())
+                                        .map(|n| n.id.clone());
                                 }
                                 if let Some(root) = s.proof.nodes.first() {
                                     s.proof.root_node_id = Some(root.id.clone());

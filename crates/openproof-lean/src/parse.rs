@@ -119,9 +119,12 @@ pub fn declarations_to_proof_nodes(
 ) -> Vec<ProofNode> {
     let now = Utc::now().to_rfc3339();
     let mut nodes = Vec::new();
-    let mut root_id: Option<String> = None;
+    let mut current_root_id: Option<String> = None;
 
-    for (i, decl) in decls.iter().enumerate() {
+    // Collect all declaration names for dependency extraction
+    let all_names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
+
+    for decl in decls {
         let kind = match decl.kind {
             "theorem" => ProofNodeKind::Theorem,
             "lemma" => ProofNodeKind::Lemma,
@@ -129,19 +132,25 @@ pub fn declarations_to_proof_nodes(
         };
 
         let id = format!("lean_{session_id}_{}", decl.name);
-        let is_root = i == 0 && matches!(kind, ProofNodeKind::Theorem);
 
-        if is_root {
-            root_id = Some(id.clone());
-        }
-
-        let parent_id = if is_root {
-            None
-        } else {
-            root_id.clone()
+        // Theorems are always independent roots.
+        // Lemmas are children of the current root theorem (or roots if none).
+        // Defs before any theorem are roots; after a theorem they're children.
+        let is_root = match kind {
+            ProofNodeKind::Theorem => true,
+            ProofNodeKind::Lemma => current_root_id.is_none(),
+            _ => current_root_id.is_none(),
         };
 
+        if is_root {
+            current_root_id = Some(id.clone());
+        }
+
+        let parent_id = if is_root { None } else { current_root_id.clone() };
         let depth = if is_root { 0 } else { 1 };
+
+        // Extract dependencies: which other declarations does this one reference?
+        let depends_on = extract_dependencies(&decl.body, &all_names, &decl.name);
 
         nodes.push(ProofNode {
             id,
@@ -151,7 +160,7 @@ pub fn declarations_to_proof_nodes(
             content: decl.body.clone(),
             status: ProofNodeStatus::Pending,
             parent_id,
-            depends_on: Vec::new(),
+            depends_on,
             depth,
             created_at: now.clone(),
             updated_at: now.clone(),
@@ -159,4 +168,29 @@ pub fn declarations_to_proof_nodes(
     }
 
     nodes
+}
+
+/// Extract names of other declarations referenced in a declaration body.
+pub fn extract_dependencies(body: &str, all_names: &[&str], self_name: &str) -> Vec<String> {
+    let mut deps = Vec::new();
+    for &name in all_names {
+        if name == self_name {
+            continue;
+        }
+        // Check if the name appears as a word boundary in the body
+        if body.contains(name) {
+            // Verify it's a word boundary (not a substring of a longer name)
+            for (i, _) in body.match_indices(name) {
+                let before = if i > 0 { body.as_bytes().get(i - 1).copied() } else { Some(b' ') };
+                let after = body.as_bytes().get(i + name.len()).copied();
+                let is_word = before.map(|b| !b.is_ascii_alphanumeric() && b != b'_').unwrap_or(true)
+                    && after.map(|b| !b.is_ascii_alphanumeric() && b != b'_').unwrap_or(true);
+                if is_word {
+                    deps.push(name.to_string());
+                    break;
+                }
+            }
+        }
+    }
+    deps
 }

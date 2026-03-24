@@ -736,8 +736,27 @@ pub fn persist_verification_result(
     result: openproof_protocol::LeanVerificationSummary,
 ) {
     tokio::spawn(async move {
+        let store2 = store.clone();
+        let result2 = result.clone();
+        let session2 = session.clone();
         let outcome =
-            tokio::task::spawn_blocking(move || store.record_verification_result(&session, &result))
+            tokio::task::spawn_blocking(move || {
+                let res = store.record_verification_result(&session, &result);
+                // Populate knowledge graph edges from declaration dependencies
+                if result.ok {
+                    let parsed = openproof_lean::parse_lean_declarations(&result.rendered_scratch);
+                    let all_names: Vec<&str> = parsed.iter().map(|d| d.name.as_str()).collect();
+                    for decl in &parsed {
+                        let from_key = format!("user-verified/{}/{}", session.id, decl.name);
+                        for dep in openproof_lean::parse::extract_dependencies(&decl.body, &all_names, &decl.name) {
+                            let to_key = format!("user-verified/{}/{}", session.id, dep);
+                            let _ = store2.add_corpus_edge(&from_key, &to_key, "uses", 1.0);
+                        }
+                        let _ = store2.auto_tag_from_module(&from_key, &decl.name);
+                    }
+                }
+                res
+            })
                 .await;
         match outcome {
             Ok(Ok(())) => {}

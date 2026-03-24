@@ -125,43 +125,46 @@ impl AppState {
                 }
             }
 
-            let active_node_id = session.proof.active_node_id.clone();
-            if let Some(node_id) = active_node_id {
-                if let Some(node) = session
-                    .proof
-                    .nodes
-                    .iter_mut()
-                    .find(|node| node.id == node_id)
-                {
-                    // Never mark verified if the content has sorry or is vacuous
-                    let has_sorry = node.content.contains("sorry")
-                        || result.rendered_scratch.contains("sorry");
-                    // Reject vacuous proofs: conclusion is True, or uses axiom/constant
-                    let is_vacuous = result.rendered_scratch.contains(": True :=")
-                        || result.rendered_scratch.contains(": True by")
-                        || result.rendered_scratch.lines().any(|l| {
-                            let t = l.trim();
-                            t.starts_with("axiom ") || t.starts_with("constant ")
-                        });
-                    let truly_ok = result.ok && !has_sorry && !is_vacuous;
-                    node.status = if truly_ok {
-                        ProofNodeStatus::Verified
-                    } else {
-                        ProofNodeStatus::Failed
-                    };
-                    node.updated_at = now.clone();
-                    session.proof.phase = if truly_ok {
-                        "done".to_string()
-                    } else {
-                        "repairing".to_string()
-                    };
-                    session.proof.status_line = if truly_ok {
-                        format!("Lean verified {}.", node.label)
-                    } else {
-                        format!("Lean rejected {}.", node.label)
-                    };
+            // Mark ALL nodes individually based on per-declaration sorry analysis.
+            // When the file compiles, each node is verified/failed based on its own content.
+            // When the file doesn't compile, all nodes are failed.
+            for node in session.proof.nodes.iter_mut() {
+                let node_has_sorry = node.content.contains("sorry");
+                let is_vacuous = node.content.contains(": True :=")
+                    || node.content.contains(": True by")
+                    || node.content.lines().any(|l| {
+                        let t = l.trim();
+                        t.starts_with("axiom ") || t.starts_with("constant ")
+                    });
+                if result.ok && !node_has_sorry && !is_vacuous {
+                    node.status = ProofNodeStatus::Verified;
+                } else if !result.ok {
+                    node.status = ProofNodeStatus::Failed;
+                } else {
+                    // File compiled but this node has sorry
+                    node.status = ProofNodeStatus::Failed;
                 }
+                node.updated_at = now.clone();
             }
+
+            // Phase from aggregate status
+            let all_verified = session.proof.nodes.iter()
+                .all(|n| n.status == ProofNodeStatus::Verified);
+            let verified_count = session.proof.nodes.iter()
+                .filter(|n| n.status == ProofNodeStatus::Verified).count();
+            let total = session.proof.nodes.len();
+            session.proof.phase = if all_verified && total > 0 {
+                "done".to_string()
+            } else {
+                "repairing".to_string()
+            };
+            session.proof.status_line = if all_verified && total > 0 {
+                "All theorems verified.".to_string()
+            } else if result.ok {
+                format!("{verified_count}/{total} nodes verified (sorry in remaining).")
+            } else {
+                "Lean compilation failed.".to_string()
+            };
             if let Some(branch_id) = session.proof.active_branch_id.clone() {
                 if let Some(branch) = session
                     .proof
