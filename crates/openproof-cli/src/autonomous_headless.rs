@@ -283,22 +283,33 @@ pub async fn run_autonomous(
         }
     }
 
-    // Direct verification: check if the initial response contains compilable lean code.
+    // Direct verification: check workspace files for compilable lean code.
     // Skip when resuming -- the existing code already verified, we want to push further.
     if resume.is_none() {
         let session = state.current_session().cloned().unwrap();
-        let mut lean_candidates: Vec<String> = session
-            .proof
-            .nodes
-            .iter()
-            .filter(|n| !n.content.trim().is_empty())
-            .map(|n| n.content.clone())
-            .collect();
 
-        if let Some(last_msg) = session
-            .transcript
-            .iter()
-            .rev()
+        // Read workspace .lean files directly (source of truth)
+        let ws_dir = store.workspace_dir(&session.id);
+        let mut lean_candidates: Vec<String> = Vec::new();
+        if let Ok(files) = store.list_workspace_files(&session.id) {
+            for (path, _) in &files {
+                if path.ends_with(".lean") && !path.contains("history/") {
+                    if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
+                        if !content.trim().is_empty() && !lean_candidates.iter().any(|c| c == &content) {
+                            lean_candidates.push(content);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Also check node content and transcript as fallbacks
+        for node in &session.proof.nodes {
+            if !node.content.trim().is_empty() && !lean_candidates.iter().any(|c| c == &node.content) {
+                lean_candidates.push(node.content.clone());
+            }
+        }
+        if let Some(last_msg) = session.transcript.iter().rev()
             .find(|e| e.role == MessageRole::Assistant)
         {
             for block in extract_lean_blocks_from_text(&last_msg.content) {
