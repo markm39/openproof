@@ -286,47 +286,71 @@ function GraphTab({ session }) {
     const nodes = [];
     const edges = [];
 
-    // Group proof nodes by depth for layout
-    const byDepth = {};
-    for (const n of proofNodes) {
-      const d = n.depth || 0;
-      if (!byDepth[d]) byDepth[d] = [];
-      byDepth[d].push(n);
+    // Layout: if nodes have parent_id, use tree layout.
+    // Otherwise use a 2-column grid for flat declarations.
+    const hasTree = proofNodes.some(n => n.parent_id || n.parentId);
+
+    if (hasTree) {
+      // Tree layout by depth
+      const byDepth = {};
+      for (const n of proofNodes) {
+        const d = n.depth || 0;
+        if (!byDepth[d]) byDepth[d] = [];
+        byDepth[d].push(n);
+      }
+      for (const n of proofNodes) {
+        const d = n.depth || 0;
+        const siblings = byDepth[d] || [];
+        const idx = siblings.indexOf(n);
+        const totalWidth = siblings.length * 220;
+        const startX = -(totalWidth / 2) + 110;
+        nodes.push({
+          id: n.id, type: "proofNode",
+          position: { x: startX + idx * 220, y: d * 120 },
+          draggable: true,
+          data: { ...n, _nodeColor: statusColor(n.status) },
+        });
+      }
+    } else {
+      // Grid layout for flat declarations (2 columns)
+      const cols = 2;
+      for (let i = 0; i < proofNodes.length; i++) {
+        const n = proofNodes[i];
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        nodes.push({
+          id: n.id, type: "proofNode",
+          position: { x: col * 280, y: row * 100 },
+          draggable: true,
+          data: { ...n, _nodeColor: statusColor(n.status) },
+        });
+      }
     }
 
-    // Position proof nodes in a tree
+    // Edges: parent edges, dependency edges, and flow edges
+    let prevId = null;
     for (const n of proofNodes) {
-      const d = n.depth || 0;
-      const siblings = byDepth[d] || [];
-      const idx = siblings.indexOf(n);
-      const totalWidth = siblings.length * 220;
-      const startX = -(totalWidth / 2) + 110;
-
-      nodes.push({
-        id: n.id,
-        type: "proofNode",
-        position: { x: startX + idx * 220, y: d * 100 },
-        draggable: true,
-        data: { ...n, _nodeColor: statusColor(n.status) },
-      });
-
-      // Parent edge
       const parentId = n.parent_id || n.parentId;
       if (parentId) {
         edges.push({
-          id: "tree-" + n.id,
-          source: parentId,
-          target: n.id,
+          id: "tree-" + n.id, source: parentId, target: n.id,
           style: { stroke: "#3b82f6", strokeWidth: 2 },
           animated: n.status === "proving",
         });
+      } else if (prevId && !hasTree) {
+        // Flow edge for flat layouts (declaration order)
+        edges.push({
+          id: "flow-" + n.id, source: prevId, target: n.id,
+          style: { stroke: "#333", strokeWidth: 1 },
+          type: "smoothstep",
+        });
       }
+      prevId = n.id;
 
       // Dependency edges
       for (const depId of (n.depends_on || n.dependsOn || [])) {
         edges.push({
-          id: "dep-" + n.id + "-" + depId,
-          source: depId,
+          id: "dep-" + n.id + "-" + depId, source: depId,
           target: n.id,
           style: { stroke: "#6b7280", strokeWidth: 1, strokeDasharray: "4 3" },
         });
@@ -371,12 +395,13 @@ function GraphTab({ session }) {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState(flowNodes);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(flowEdges);
 
-  // Sync data from polling without resetting user-dragged positions
+  // Sync data from polling without resetting user-dragged positions.
+  // Skip empty updates to prevent flash-then-disappear.
   useEffect(() => {
+    if (flowNodes.length === 0) return;
     setRfNodes((prev) => {
       const prevById = {};
       for (const n of prev) prevById[n.id] = n;
-      // Update existing nodes' data but keep their position if they were dragged
       const merged = flowNodes.map((fn) => {
         const existing = prevById[fn.id];
         if (existing) {
