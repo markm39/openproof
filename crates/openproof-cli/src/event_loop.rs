@@ -253,14 +253,19 @@ pub async fn run_app(
 
                                 s.proof.nodes = parsed_nodes.iter().map(|pn| {
                                     let mut node = pn.clone();
-                                    // Preserve old status unless it was stale
+                                    // Preserve old Verified status, but re-evaluate Failed
                                     if let Some(&prev) = old_statuses.get(&node.label) {
-                                        if prev != openproof_protocol::ProofNodeStatus::Pending {
+                                        if prev == openproof_protocol::ProofNodeStatus::Verified
+                                            && !node.content.contains("sorry")
+                                        {
                                             node.status = prev;
                                         }
                                     }
-                                    // Mark sorry-containing nodes as Proving
+                                    // Mark sorry-containing nodes as Proving (needs work)
+                                    // Mark sorry-free nodes as Proving (needs verification)
                                     if node.content.contains("sorry") {
+                                        node.status = openproof_protocol::ProofNodeStatus::Proving;
+                                    } else if !node.content.trim().is_empty() {
                                         node.status = openproof_protocol::ProofNodeStatus::Proving;
                                     }
                                     node.updated_at = now.clone();
