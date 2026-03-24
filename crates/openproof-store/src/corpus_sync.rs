@@ -390,7 +390,15 @@ impl AppStore {
         let id = format!("edge_{}", crate::corpus::next_store_id("edge"));
         conn.execute(
             "INSERT OR IGNORE INTO corpus_edges (id, from_item_key, to_item_key, edge_type, confidence, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            rusqlite::params![id, from_key, to_key, edge_type, confidence, now],
+            rusqlite::params![id, from_key, to_key, edge_type, confidence, &now],
+        )?;
+        // Queue for cloud sync
+        let payload = format!(
+            "{{\"edges\":[{{\"from_item_key\":\"{from_key}\",\"to_item_key\":\"{to_key}\",\"edge_type\":\"{edge_type}\",\"confidence\":{confidence}}}]}}"
+        );
+        conn.execute(
+            "INSERT INTO sync_queue (id, session_id, queue_type, payload_json, status, created_at, updated_at) VALUES (?, '', 'corpus.edges', ?, 'pending', ?, ?)",
+            rusqlite::params![crate::corpus::next_store_id("sync"), payload, &now, &now],
         )?;
         Ok(())
     }

@@ -610,6 +610,22 @@ pub fn run_autonomous_step(
                 ctx.push('\n');
             }
         }
+        // Related items from knowledge graph
+        if let Some(active) = latest_session.proof.active_node_id.as_deref()
+            .and_then(|id| latest_session.proof.nodes.iter().find(|n| n.id == id))
+        {
+            let item_key = format!("user-verified/{}/{}", latest_session.id, active.label);
+            if let Ok(related) = store.get_related_items(&item_key, 5) {
+                if !related.is_empty() {
+                    ctx.push_str("RELATED ITEMS (from knowledge graph):\n");
+                    for (to_key, edge_type, confidence) in &related {
+                        let label = to_key.rsplit('/').next().unwrap_or(to_key);
+                        ctx.push_str(&format!("  [{edge_type} conf={confidence:.1}] {label}\n"));
+                    }
+                    ctx.push('\n');
+                }
+            }
+        }
         // Explicit tool instructions
         ctx.push_str(
             "INSTRUCTIONS: Use tools to work on this code.\n\

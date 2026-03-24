@@ -422,6 +422,25 @@ impl CloudCorpusClient {
             .cloned()
             .unwrap_or_default())
     }
+
+    /// Upload corpus edges to cloud knowledge graph.
+    pub async fn upload_corpus_edges(
+        &self,
+        edges: serde_json::Value,
+    ) -> Result<()> {
+        let base_url = match self.base_url() {
+            Some(url) => url,
+            None => return Ok(()),
+        };
+        let _ = self
+            .client
+            .post(format!("{base_url}/api/v1/uploads/edges"))
+            .json(&edges)
+            .send()
+            .await
+            .context("corpus edge upload failed")?;
+        Ok(())
+    }
 }
 
 /// A semantic search hit from the cloud corpus.

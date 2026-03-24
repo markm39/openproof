@@ -167,6 +167,21 @@ pub async fn drain_sync_queue(
         let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
             .await;
     }
+    // Sync corpus edges
+    let edge_jobs: Vec<_> = jobs.iter()
+        .filter(|j| j.status == "pending" && j.queue_type == "corpus.edges")
+        .cloned()
+        .collect();
+    for job in &edge_jobs {
+        if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&job.payload_json) {
+            let _ = cloud_client.upload_corpus_edges(payload).await;
+        }
+        let store = store.clone();
+        let jid = job.id.clone();
+        let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
+            .await;
+    }
+
     let pending_jobs: Vec<_> = jobs
         .into_iter()
         .filter(|j| j.status == "pending" && j.queue_type == "corpus.contribute")
