@@ -90,9 +90,19 @@ fn tool_lean_verify(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
 
     let scratch_path = write_temp_file(&full_content)?;
     let (ok, output) = run_lean_command(ctx.project_dir, &scratch_path)?;
+    let has_sorry = output.contains("declaration uses 'sorry'");
+    let mut result = truncate_output(&output);
+
+    // Append workflow hint based on result
+    if !ok {
+        result.push_str("\n\nNext: file_read the file, find the error line, file_patch to fix it, lean_verify again.");
+    } else if has_sorry {
+        result.push_str("\n\nNext: lean_goals to see sorry goals, then lean_screen_tactics to find working tactics.");
+    }
+
     Ok(ToolOutput {
-        success: ok && !output.contains("declaration uses 'sorry'"),
-        content: truncate_output(&output),
+        success: ok && !has_sorry,
+        content: result,
     })
 }
 
