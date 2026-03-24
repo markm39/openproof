@@ -180,20 +180,6 @@ impl<B: Backend + Write> CustomTerminal<B> {
         let mut frame = self.get_frame();
         render_callback(&mut frame);
         let cursor_position = frame.cursor_position;
-
-        // Queue a viewport clear before the diff commands.  This wipes
-        // any artifacts left by external writes (stderr, wide-char
-        // mismatches, etc.) without a visible flash because the clear
-        // and subsequent draw commands are sent to the terminal in a
-        // single write.
-        queue!(
-            self.backend,
-            MoveTo(self.viewport_area.x, self.viewport_area.y),
-            Clear(crossterm::terminal::ClearType::FromCursorDown),
-        )?;
-        // Reset previous buffer so the diff emits every cell.
-        self.previous_buffer_mut().reset();
-
         self.flush()?;
         match cursor_position {
             None => self.hide_cursor()?,
