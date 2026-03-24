@@ -447,9 +447,57 @@ function GraphTab({ session }) {
 
 // ── Paper Tab ───────────────────────────────────────────────────────────
 
+// Lean syntax highlighting (keywords, types, comments, strings)
+const LEAN_KEYWORDS = new Set([
+  "theorem", "lemma", "def", "abbrev", "instance", "class", "structure",
+  "where", "by", "have", "let", "show", "suffices", "calc", "match", "with",
+  "if", "then", "else", "do", "return", "for", "in", "open", "import",
+  "namespace", "end", "section", "variable", "example", "noncomputable",
+  "sorry", "exact", "apply", "intro", "intros", "rw", "simp", "omega",
+  "ring", "norm_num", "linarith", "nlinarith", "aesop", "trivial",
+  "constructor", "rcases", "obtain", "refine", "cases", "induction",
+  "contradiction", "exfalso", "push_neg", "classical", "decide",
+]);
+const LEAN_TYPES = new Set([
+  "Prop", "Type", "Sort", "Nat", "Int", "Bool", "String", "List", "Option",
+  "True", "False", "And", "Or", "Not", "Iff", "Exists", "Finset", "Set",
+]);
+
+function highlightLean(line) {
+  // Comment
+  if (line.trimStart().startsWith("--") || line.trimStart().startsWith("/-")) {
+    return h`<span style=${{ color: "#525252", fontStyle: "italic" }}>${line}</span>`;
+  }
+  // sorry gets red
+  if (line.includes("sorry")) {
+    const parts = line.split("sorry");
+    const result = [];
+    for (let i = 0; i < parts.length; i++) {
+      if (i > 0) result.push(h`<span style=${{ color: "#ef4444", fontWeight: 600 }}>sorry</span>`);
+      result.push(highlightTokens(parts[i]));
+    }
+    return h`<span>${result}</span>`;
+  }
+  return highlightTokens(line);
+}
+
+function highlightTokens(text) {
+  return text.replace(/\b(\w+)\b/g, (match) => {
+    if (LEAN_KEYWORDS.has(match)) return `\x01kw\x02${match}\x01/kw\x02`;
+    if (LEAN_TYPES.has(match)) return `\x01ty\x02${match}\x01/ty\x02`;
+    return match;
+  }).split(/(\x01kw\x02[^\x01]*\x01\/kw\x02|\x01ty\x02[^\x01]*\x01\/ty\x02)/).map((part, i) => {
+    if (part.startsWith("\x01kw\x02")) return h`<span key=${i} style=${{ color: "#c084fc" }}>${part.slice(4, -5)}</span>`;
+    if (part.startsWith("\x01ty\x02")) return h`<span key=${i} style=${{ color: "#22d3ee" }}>${part.slice(4, -5)}</span>`;
+    return part;
+  });
+}
+
 function CodeTab({ sessionId }) {
-  const [files, setFiles] = useState([]);
+  const filesRef = React.useRef([]);
+  const [filePaths, setFilePaths] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [content, setContent] = useState("");
 
   useEffect(() => {
     if (!sessionId) return;
@@ -458,47 +506,73 @@ function CodeTab({ sessionId }) {
       try {
         const r = await fetch(`/api/workspace?id=${encodeURIComponent(sessionId)}`);
         const d = await r.json();
-        if (!c) {
-          const f = d.files || d || [];
-          setFiles(f);
-          if (!selected && f.length > 0) setSelected(f[0].path);
+        if (c) return;
+        const f = d.files || d || [];
+        filesRef.current = f;
+        // Only update file list if paths changed (avoids re-render on content-only changes)
+        const newPaths = f.map(x => x.path).join(",");
+        const oldPaths = filePaths.join(",");
+        if (newPaths !== oldPaths) {
+          setFilePaths(f.map(x => x.path));
         }
+        // Update content for selected file without resetting scroll
+        const sel = selected || (f.length > 0 ? f[0].path : null);
+        if (!selected && f.length > 0) setSelected(f[0].path);
+        const cur = f.find(x => x.path === sel);
+        if (cur) setContent(cur.content || "");
       } catch {}
     }
     poll();
-    const t = setInterval(poll, 3000);
+    const t = setInterval(poll, 4000);
     return () => { c = true; clearInterval(t); };
-  }, [sessionId]);
+  }, [sessionId, selected]);
 
-  const current = files.find(f => f.path === selected);
+  const selectFile = useCallback((path) => {
+    setSelected(path);
+    const cur = filesRef.current.find(f => f.path === path);
+    if (cur) setContent(cur.content || "");
+  }, []);
+
+  const lines = content.split("\n");
 
   return h`
     <div style=${{ display: "flex", height: "100%", gap: 0 }}>
-      <div style=${{ width: 180, borderRight: "1px solid #262626", padding: "8px 0", overflow: "auto" }}>
-        ${files.map(f => h`
-          <button key=${f.path}
-            onClick=${() => setSelected(f.path)}
+      <div style=${{ width: 180, borderRight: "1px solid #262626", padding: "8px 0", overflow: "auto", flexShrink: 0 }}>
+        ${filePaths.map(path => h`
+          <button key=${path}
+            onClick=${() => selectFile(path)}
             style=${{
               display: "block", width: "100%", textAlign: "left",
               padding: "6px 12px", border: "none", cursor: "pointer",
-              background: selected === f.path ? "#1a1a1a" : "transparent",
-              color: selected === f.path ? "#e5e5e5" : "#737373",
-              fontSize: 12, fontFamily: "monospace",
+              background: selected === path ? "#1e293b" : "transparent",
+              color: selected === path ? "#e5e5e5" : "#737373",
+              fontSize: 12, fontFamily: "'SF Mono', 'Fira Code', monospace",
+              borderLeft: selected === path ? "2px solid #3b82f6" : "2px solid transparent",
             }}>
-            ${f.path}
+            ${path}
           </button>
         `)}
       </div>
-      <div style=${{ flex: 1, overflow: "auto", padding: 16 }}>
-        ${current ? h`
-          <div style=${{ fontFamily: "monospace", fontSize: 12, color: "#e5e5e5", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-            ${(current.content || "").split("\\n").map((line, i) => h`
-              <div key=${i} style=${{ display: "flex" }}>
-                <span style=${{ color: "#525252", width: 40, textAlign: "right", paddingRight: 12, userSelect: "none", flexShrink: 0 }}>${i + 1}</span>
-                <span>${line}</span>
+      <div style=${{ flex: 1, overflow: "auto", padding: 0 }}>
+        ${content ? h`
+          <pre style=${{
+            margin: 0, padding: "12px 0", fontFamily: "'SF Mono', 'Fira Code', Consolas, monospace",
+            fontSize: 13, lineHeight: 1.6, color: "#e5e5e5", background: "#0a0a0a",
+            tabSize: 2, minHeight: "100%",
+          }}>
+            ${lines.map((line, i) => h`
+              <div key=${i} style=${{ display: "flex", minHeight: "1.6em",
+                background: line.includes("sorry") ? "rgba(239,68,68,0.08)" : "transparent",
+              }}>
+                <span style=${{
+                  color: "#404040", width: 48, textAlign: "right", paddingRight: 16,
+                  userSelect: "none", flexShrink: 0, borderRight: "1px solid #1a1a1a",
+                  marginRight: 16,
+                }}>${i + 1}</span>
+                <code>${highlightLean(line)}</code>
               </div>
             `)}
-          </div>
+          </pre>
         ` : h`<div style=${{ color: "#737373", padding: 20 }}>Select a file</div>`}
       </div>
     </div>
