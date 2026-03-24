@@ -5,14 +5,20 @@ use openproof_protocol::{ProofNode, SessionSnapshot};
 /// Render a ProofNode's content as a complete Lean scratch file with imports.
 /// Includes all sibling nodes so helper lemmas are available to the active node.
 pub fn render_node_scratch(session: &SessionSnapshot, node: &ProofNode) -> String {
-    let content = clean_lean_content(node.content.trim());
-    let content = content.trim();
+    let raw_content = clean_lean_content(node.content.trim());
+    let raw_content = raw_content.trim();
 
-    // If the content already has import statements, it's a self-contained Lean file.
-    // Use it as-is to avoid duplicate imports.
-    if content.starts_with("import ") {
-        return content.to_string();
+    // If the content has import statements and there are no sibling nodes,
+    // it's a self-contained file -- use as-is.
+    let has_siblings = session.proof.nodes.iter()
+        .any(|n| n.id != node.id && !n.content.trim().is_empty());
+    if raw_content.starts_with("import ") && !has_siblings {
+        return raw_content.to_string();
     }
+
+    // Strip imports from active node content (we add our own)
+    let content = strip_imports(raw_content);
+    let content = content.trim();
 
     let imports = if session.proof.imports.is_empty() {
         vec!["Mathlib".to_string()]
@@ -36,8 +42,9 @@ pub fn render_node_scratch(session: &SessionSnapshot, node: &ProofNode) -> Strin
             continue;
         }
         let sibling_content = clean_lean_content(sibling.content.trim());
+        let sibling_content = strip_imports(sibling_content.trim());
         let sibling_content = sibling_content.trim();
-        if sibling_content.is_empty() || sibling_content.starts_with("import ") {
+        if sibling_content.is_empty() {
             continue;
         }
         lines.push(format!("-- openproof: {} :: {}", escape_comment(&sibling.label), escape_comment(&sibling.statement)));
@@ -85,6 +92,18 @@ pub(crate) fn dedup_strings(values: Vec<String>) -> Vec<String> {
         }
     }
     result
+}
+
+/// Strip `import` and `open` lines from the beginning of Lean content.
+fn strip_imports(content: &str) -> String {
+    content
+        .lines()
+        .skip_while(|line| {
+            let t = line.trim();
+            t.is_empty() || t.starts_with("import ") || t.starts_with("open ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn escape_comment(input: &str) -> String {
