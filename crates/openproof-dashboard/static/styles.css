@@ -77,7 +77,7 @@ body {
 .tab-active { color: var(--text); border-bottom-color: var(--accent); }
 
 /* Tab content */
-.tab-content { flex: 1; min-height: 0; overflow: hidden; }
+.tab-content { flex: 1; min-height: 0; overflow: hidden; position: relative; }
 
 /* Overview tab */
 .overview {

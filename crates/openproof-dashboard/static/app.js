@@ -393,7 +393,7 @@ function GraphTab({ session }) {
   const attemptNum = proof?.attempt_number || proof?.attemptNumber || 0;
 
   return h`
-    <div className="graph-canvas" style=${{ height: "100%", minHeight: 400 }}>
+    <div className="graph-canvas" style=${{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, minHeight: 400 }}>
       <div className="graph-info">
         <span>Phase: <strong>${proof?.phase || "idle"}</strong></span>
         <span>\u00a0\u00b7\u00a0 Proof nodes: ${proofNodes.length}</span>
