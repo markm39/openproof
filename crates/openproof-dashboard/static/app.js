@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "https://esm.sh/react@18.3.1";
 import { createRoot } from "https://esm.sh/react-dom@18.3.1/client";
 import htm from "https://esm.sh/htm@3.1.1";
-import { ReactFlow, Background, Controls, MiniMap, Handle, Position, useNodesState, useEdgesState } from "https://esm.sh/@xyflow/react@12.6.0?deps=react@18.3.1,react-dom@18.3.1";
+import { ReactFlow, Background, Controls, MiniMap, Handle, Position } from "https://esm.sh/@xyflow/react@12.6.0?deps=react@18.3.1,react-dom@18.3.1";
 
 const h = htm.bind(React.createElement);
 const POLL_MS = 2000;
@@ -392,27 +392,9 @@ function GraphTab({ session }) {
     return { flowNodes: nodes, flowEdges: edges };
   }, [proofNodes, branches]);
 
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(flowNodes);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(flowEdges);
-
-  // Sync data from polling without resetting user-dragged positions.
-  // Skip empty updates to prevent flash-then-disappear.
-  useEffect(() => {
-    if (flowNodes.length === 0) return;
-    setRfNodes((prev) => {
-      const prevById = {};
-      for (const n of prev) prevById[n.id] = n;
-      const merged = flowNodes.map((fn) => {
-        const existing = prevById[fn.id];
-        if (existing) {
-          return { ...fn, position: existing.position };
-        }
-        return fn;
-      });
-      return merged;
-    });
-    setRfEdges(flowEdges);
-  }, [flowNodes, flowEdges]);
+  // Use controlled mode: pass nodes/edges directly to ReactFlow.
+  // No useNodesState/useEdgesState -- avoids the state-fighting bug
+  // that causes nodes to flash then disappear on poll updates.
 
   const verification = proof?.last_verification;
   const attemptNum = proof?.attempt_number || proof?.attemptNumber || 0;
@@ -438,10 +420,8 @@ function GraphTab({ session }) {
       </div>
       <div style=${{ flex: 1, width: "100%" }}>
         <${ReactFlow}
-          nodes=${rfNodes}
-          edges=${rfEdges}
-          onNodesChange=${onNodesChange}
-          onEdgesChange=${onEdgesChange}
+          nodes=${flowNodes}
+          edges=${flowEdges}
           nodeTypes=${nodeTypes}
           fitView
           fitViewOptions=${{ padding: 0.3 }}
