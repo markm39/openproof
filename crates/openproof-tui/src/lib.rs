@@ -515,9 +515,9 @@ fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
     let text = if state.turn_in_flight || state.verification_in_flight {
         let tool_info = if state.tool_loop_active {
             if let Some(ref name) = state.current_tool_name {
-                format!(" | tool: {name} (iter {}/{})", state.tool_loop_iteration + 1, 25)
+                format!(" | tool: {name} (iter {}/{})", state.tool_loop_iteration + 1, 40)
             } else {
-                format!(" | tool loop (iter {}/{})", state.tool_loop_iteration + 1, 25)
+                format!(" | tool loop (iter {}/{})", state.tool_loop_iteration + 1, 40)
             }
         } else {
             String::new()
