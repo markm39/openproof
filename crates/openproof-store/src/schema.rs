@@ -8,7 +8,7 @@ pub(crate) fn open_connection(db_path: &Path) -> Result<Connection> {
     conn.execute_batch(
         r#"
         PRAGMA journal_mode = WAL;
-        PRAGMA busy_timeout = 5000;
+        PRAGMA busy_timeout = 30000;
         CREATE TABLE IF NOT EXISTS sessions (
             id TEXT PRIMARY KEY,
             title TEXT NOT NULL,
