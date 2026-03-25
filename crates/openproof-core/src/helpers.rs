@@ -118,6 +118,7 @@ pub fn default_session_with_workspace(
             hidden_branch_count: 0,
             imports: vec!["Mathlib".to_string()],
             nodes: Vec::new(),
+            proof_goals: Vec::new(),
             branches: Vec::new(),
             agents: Vec::new(),
             last_rendered_scratch: None,

@@ -74,6 +74,39 @@ pub enum ProofNodeStatus {
     Abandoned,
 }
 
+/// Status of a proof goal in the Pantograph proof tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GoalStatus {
+    #[default]
+    Open,
+    InProgress,
+    Closed,
+    Failed,
+}
+
+/// A goal in the Pantograph proof tree, visible in the dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ProofGoal {
+    pub id: String,
+    /// The goal's type expression (what needs to be proved).
+    pub goal_text: String,
+    pub status: GoalStatus,
+    /// Parent goal that was split to create this one.
+    pub parent_goal_id: Option<String>,
+    /// Tactic that created this subgoal (from splitting the parent).
+    pub tactic_applied: Option<String>,
+    /// Tactics that were tried and failed on this goal.
+    pub failed_tactics: Vec<String>,
+    /// Number of tactics attempted on this goal.
+    pub attempts: usize,
+    /// Line in the source file where this goal's sorry is.
+    pub sorry_line: Option<usize>,
+    /// Pantograph state ID (for chaining further tactics).
+    pub state_id: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentRole {
@@ -263,6 +296,8 @@ pub struct ProofSessionState {
     pub hidden_branch_count: usize,
     pub imports: Vec<String>,
     pub nodes: Vec<ProofNode>,
+    /// Live proof goals from Pantograph proof tree (shown in dashboard).
+    pub proof_goals: Vec<ProofGoal>,
     pub branches: Vec<ProofBranch>,
     pub agents: Vec<AgentRecord>,
     pub last_rendered_scratch: Option<String>,

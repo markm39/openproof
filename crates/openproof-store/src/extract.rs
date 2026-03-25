@@ -38,6 +38,7 @@ pub(crate) fn default_proof_state() -> ProofSessionState {
         hidden_branch_count: 0,
         imports: vec!["Mathlib".to_string()],
         nodes: Vec::new(),
+        proof_goals: Vec::new(),
         branches: Vec::new(),
         agents: Vec::new(),
         last_rendered_scratch: None,

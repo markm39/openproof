@@ -266,9 +266,51 @@ function BranchNodeComponent({ data }) {
   `;
 }
 
+function GoalNodeComponent({ data }) {
+  const colors = { open: "#f59e0b", in_progress: "#3b82f6", closed: "#22c55e", failed: "#ef4444" };
+  const color = colors[data.status] || "#737373";
+  const failCount = (data.failed_tactics || data.failedTactics || []).length;
+  return h`
+    <div style=${{
+      background: "#0a0a0a",
+      border: "1.5px dashed " + color,
+      borderRadius: 6,
+      padding: "6px 10px",
+      minWidth: 140,
+      maxWidth: 220,
+      fontFamily: "system-ui, sans-serif",
+    }}>
+      <${Handle} type="target" position=${Position.Top} style=${{ background: color }} />
+      <div style=${{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
+        <span style=${{ color, fontSize: 10, fontWeight: 600 }}>
+          ${data.status === "closed" ? "\u2713" : data.status === "failed" ? "\u2717" : "\u25CB"} goal
+        </span>
+        ${failCount > 0 ? h`
+          <span style=${{ background: "#7f1d1d", color: "#fca5a5", fontSize: 8, padding: "1px 4px", borderRadius: 3 }}>
+            ${failCount} failed
+          </span>
+        ` : null}
+        ${data.attempts > 0 ? h`
+          <span style=${{ color: "#525252", fontSize: 8 }}>${data.attempts} tried</span>
+        ` : null}
+      </div>
+      <div style=${{ color: "#a3a3a3", fontSize: 9, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
+        ${(data.goal_text || data.goalText || "").substring(0, 60)}
+      </div>
+      ${data.tactic_applied || data.tacticApplied ? h`
+        <div style=${{ color: "#22c55e", fontSize: 8, marginTop: 2 }}>
+          via: ${data.tactic_applied || data.tacticApplied}
+        </div>
+      ` : null}
+      <${Handle} type="source" position=${Position.Bottom} style=${{ background: color }} />
+    </div>
+  `;
+}
+
 const nodeTypes = {
   proofNode: ProofNodeComponent,
   branchNode: BranchNodeComponent,
+  goalNode: GoalNodeComponent,
 };
 
 function GraphTab({ session }) {
@@ -390,8 +432,45 @@ function GraphTab({ session }) {
       }
     }
 
+    // Add proof goal nodes (from Pantograph proof tree)
+    const proofGoals = proof?.proof_goals || proof?.proofGoals || [];
+    const goalY = (maxDepth + 1) * 100 + (branches.length > 0 ? 180 : 40);
+    for (let i = 0; i < proofGoals.length; i++) {
+      const g = proofGoals[i];
+      const gId = "goal-" + g.id;
+      nodes.push({
+        id: gId,
+        type: "goalNode",
+        position: { x: i * 200 - (proofGoals.length * 100), y: goalY + (g.parent_goal_id || g.parentGoalId ? 80 : 0) },
+        draggable: true,
+        data: g,
+      });
+      // Edge from parent goal
+      const parentGoalId = g.parent_goal_id || g.parentGoalId;
+      if (parentGoalId) {
+        edges.push({
+          id: "goaltree-" + g.id,
+          source: "goal-" + parentGoalId,
+          target: gId,
+          style: { stroke: "#3b82f6", strokeWidth: 1, strokeDasharray: "2 2" },
+          label: g.tactic_applied || g.tacticApplied || "",
+          labelStyle: { fill: "#22c55e", fontSize: 8 },
+        });
+      }
+      // Edge from proof node to first-level goals
+      if (!parentGoalId && proofNodes.length > 0) {
+        const activeNodeId = proof?.active_node_id || proof?.activeNodeId || proofNodes[0]?.id;
+        edges.push({
+          id: "nodegoal-" + g.id,
+          source: activeNodeId,
+          target: gId,
+          style: { stroke: "#f59e0b", strokeWidth: 1, strokeDasharray: "3 3", opacity: 0.6 },
+        });
+      }
+    }
+
     return { flowNodes: nodes, flowEdges: edges };
-  }, [proofNodes, branches]);
+  }, [proofNodes, branches, proof]);
 
   // Use controlled mode: pass nodes/edges directly to ReactFlow.
   // No useNodesState/useEdgesState -- avoids the state-fighting bug
@@ -404,7 +483,8 @@ function GraphTab({ session }) {
     <div className="graph-canvas" style=${{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)" }}>
       <div className="graph-info">
         <span>Phase: <strong>${proof?.phase || "idle"}</strong></span>
-        <span>\u00a0\u00b7\u00a0 Proof nodes: ${proofNodes.length}</span>
+        <span>\u00a0\u00b7\u00a0 Nodes: ${proofNodes.length}</span>
+        <span>\u00a0\u00b7\u00a0 Goals: ${(proof?.proof_goals || proof?.proofGoals || []).length}</span>
         <span>\u00a0\u00b7\u00a0 Attempts: ${attemptNum}</span>
         <button onClick=${() => setShowBranches(!showBranches)} style=${{
           marginLeft: 12, padding: "2px 8px", fontSize: 10, cursor: "pointer",

@@ -93,6 +93,7 @@ mod tests {
                     created_at: now.clone(),
                     updated_at: now,
                 }],
+                proof_goals: Vec::new(),
                 branches: Vec::new(),
                 agents: Vec::new(),
                 last_rendered_scratch: None,

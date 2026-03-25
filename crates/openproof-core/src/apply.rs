@@ -224,6 +224,17 @@ impl AppState {
                 self.pending_writes = self.pending_writes.saturating_sub(1);
                 self.status = format!("Background persistence failed: {error}");
             }
+            // --- Proof goal updates (from Pantograph/tactic search) ---
+            AppEvent::ProofGoalUpdated(goal) => {
+                if let Some(session) = self.current_session_mut() {
+                    // Update existing goal or insert new one
+                    if let Some(existing) = session.proof.proof_goals.iter_mut().find(|g| g.id == goal.id) {
+                        *existing = goal;
+                    } else {
+                        session.proof.proof_goals.push(goal);
+                    }
+                }
+            }
             // --- Tactic search ---
             AppEvent::TacticSearchComplete {
                 node_id,

@@ -112,6 +112,8 @@ pub enum AppEvent {
     SyncCompleted,
     PersistSucceeded(String),
     PersistFailed(String),
+    /// Update proof goal state (from Pantograph/tactic search).
+    ProofGoalUpdated(openproof_protocol::ProofGoal),
     /// Tactic search completed for a sorry position.
     TacticSearchComplete {
         node_id: String,
