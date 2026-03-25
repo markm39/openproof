@@ -661,4 +661,18 @@ impl AppStore {
 
         Ok(items)
     }
+
+    /// Get the full artifact content (proof code) for a corpus item by label.
+    /// Returns None if not found or if it's a library-seed item without stored artifact.
+    pub fn get_artifact_content(&self, label: &str) -> Result<Option<String>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            r#"SELECT a.content FROM verified_artifacts a
+               JOIN verified_corpus_items v ON v.artifact_id = a.id
+               WHERE v.label = ? AND v.origin = 'user-verified'
+               LIMIT 1"#,
+        )?;
+        let result = stmt.query_row(rusqlite::params![label], |row| row.get(0)).ok();
+        Ok(result)
+    }
 }

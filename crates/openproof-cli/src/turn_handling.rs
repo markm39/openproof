@@ -180,10 +180,18 @@ pub async fn run_agentic_loop(
                             .unwrap_or_default();
                         let mut results = Vec::new();
 
-                        // Local FTS search
+                        // Local FTS search (with graph expansion)
                         if let Ok(local_hits) = store.search_verified_corpus(&query, 10) {
                             for (label, statement, _vis) in &local_hits {
-                                results.push(format!("- {label} :: {statement}"));
+                                // For user-verified items, include the full proof code
+                                if let Ok(Some(proof_code)) = store.get_artifact_content(label) {
+                                    results.push(format!(
+                                        "*** PREVIOUSLY VERIFIED (reuse this proof): ***\n- {label} :: {statement}\n```lean\n{}\n```",
+                                        if proof_code.len() > 2000 { &proof_code[..2000] } else { &proof_code }
+                                    ));
+                                } else {
+                                    results.push(format!("- {label} :: {statement}"));
+                                }
                             }
                         }
 
@@ -200,7 +208,7 @@ pub async fn run_agentic_loop(
                                 }
                             }
                             Err(e) => {
-                                let _ = e;
+                                eprintln!("[corpus] cloud semantic search error: {e}");
                             }
                         }
 
