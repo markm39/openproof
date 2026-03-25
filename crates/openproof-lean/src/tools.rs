@@ -107,13 +107,16 @@ fn tool_lean_goals(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
         .unwrap_or("Scratch.lean");
     let target = sanitize_path(ctx.workspace_dir, file)?;
 
-    // Try MCP first for structured goals
+    // Try MCP for structured goals.
+    // MCP needs files in the Lean project dir, so copy workspace file there.
     if let Some(ref lsp) = ctx.lsp_mcp {
         if let Ok(mut mcp) = lsp.lock() {
             if mcp.is_alive() {
-                // Query goal state at each sorry position
                 let content = fs::read_to_string(&target)
                     .with_context(|| format!("reading {file}"))?;
+                // Write to project dir so MCP can find it
+                let project_scratch = ctx.project_dir.join("Scratch.lean");
+                let _ = fs::write(&project_scratch, &content);
                 let sorry_positions = find_sorry_positions(&content);
 
                 if sorry_positions.is_empty() {
@@ -125,7 +128,7 @@ fn tool_lean_goals(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
 
                 let mut output_parts = Vec::new();
                 for (line, _col) in &sorry_positions {
-                    match mcp.get_goals(&target, *line, None) {
+                    match mcp.get_goals(&project_scratch, *line, None) {
                         Ok(goal_state) => {
                             let goals = goal_state.goals_before.as_ref()
                                 .or(goal_state.goals.as_ref())
