@@ -549,17 +549,37 @@ impl AppStore {
         limit: usize,
     ) -> Result<Vec<(String, String, String)>> {
         let conn = self.connect()?;
-        let pattern = format!("%{}%", query.trim());
-        let mut stmt = conn.prepare(
-            r#"
-            SELECT label, statement, visibility
-            FROM verified_corpus_items
-            WHERE search_text LIKE ?
-            ORDER BY updated_at DESC
-            LIMIT ?
-            "#,
-        )?;
-        let rows = stmt.query_map(params![pattern, limit as i64], |row| {
+
+        // Extract keywords (3+ chars, skip common words) and search with AND logic.
+        let skip = ["the", "that", "this", "with", "from", "prove", "show", "for", "and", "not"];
+        let keywords: Vec<String> = query
+            .split(|c: char| !c.is_alphanumeric() && c != '_')
+            .filter(|w| w.len() >= 3 && !skip.contains(&w.to_lowercase().as_str()))
+            .map(|w| format!("%{}%", w))
+            .collect();
+
+        if keywords.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Build WHERE clause: search_text LIKE %kw1% AND search_text LIKE %kw2% ...
+        let conditions: Vec<String> = keywords.iter()
+            .map(|_| "search_text LIKE ?".to_string())
+            .collect();
+        let where_clause = conditions.join(" AND ");
+        let sql = format!(
+            "SELECT label, statement, visibility FROM verified_corpus_items WHERE {} ORDER BY updated_at DESC LIMIT ?",
+            where_clause
+        );
+
+        let mut stmt = conn.prepare(&sql)?;
+        let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = keywords
+            .iter()
+            .map(|k| Box::new(k.clone()) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        params.push(Box::new(limit as i64));
+
+        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
             Ok((row.get(0)?, row.get(1)?, row.get(2)?))
         })?;
         let mut items = Vec::new();
