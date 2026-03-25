@@ -104,6 +104,25 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
         original_hook(info);
     }));
 
+    // Spawn Pantograph before entering TUI (loads Mathlib ~18s).
+    let lean_project_dir = resolve_lean_project_dir();
+    print!("Loading Lean environment...");
+    io::stdout().flush()?;
+    let session_prover: Option<openproof_lean::proof_tree::SharedProver> =
+        tokio::task::spawn_blocking({
+            let pd = lean_project_dir.clone();
+            move || openproof_lean::proof_tree::SessionProver::spawn(&pd)
+        })
+        .await
+        .ok()
+        .and_then(|r| r.ok())
+        .map(|sp| std::sync::Arc::new(std::sync::Mutex::new(sp)));
+    if session_prover.is_some() {
+        println!(" ready.");
+    } else {
+        println!(" (Pantograph not available, using lean compile fallback)");
+    }
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     write!(stdout, "\x1b[r\x1b[0m\x1b[H\x1b[2J\x1b[3J\x1b[H")?;
@@ -114,7 +133,7 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
     let mut terminal = openproof_tui::custom_terminal::CustomTerminal::with_options(backend)?;
     let size = terminal.size()?;
     terminal.set_viewport_area(ratatui::layout::Rect::new(0, 0, size.width, size.height));
-    let app_result = run_app(&mut terminal, store, &mut state, tx, &mut rx).await;
+    let app_result = run_app(&mut terminal, store, &mut state, tx, &mut rx, session_prover).await;
     let _ = crossterm::execute!(terminal.backend_mut(), crossterm::event::DisableBracketedPaste);
     disable_raw_mode()?;
     terminal.show_cursor()?;

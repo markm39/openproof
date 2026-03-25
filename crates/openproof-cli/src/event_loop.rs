@@ -26,30 +26,12 @@ pub async fn run_app(
     state: &mut AppState,
     tx: mpsc::UnboundedSender<AppEvent>,
     rx: &mut mpsc::UnboundedReceiver<AppEvent>,
+    session_prover: Option<openproof_lean::proof_tree::SharedProver>,
 ) -> anyhow::Result<()> {
     let mut last_session_id = state
         .current_session()
         .map(|s| s.id.clone())
         .unwrap_or_default();
-
-    // Spawn Pantograph in background -- don't block TUI startup.
-    // It takes ~18s to import Mathlib. The Arc<Mutex<Option>> starts as None
-    // and gets filled when ready. Tool calls fall back to lean compile until then.
-    let project_dir = crate::helpers::resolve_lean_project_dir();
-    let session_prover: std::sync::Arc<std::sync::Mutex<Option<openproof_lean::proof_tree::SharedProver>>> =
-        std::sync::Arc::new(std::sync::Mutex::new(None));
-    {
-        let prover_slot = session_prover.clone();
-        let pd = project_dir.clone();
-        tokio::task::spawn_blocking(move || {
-            if let Ok(sp) = openproof_lean::proof_tree::SessionProver::spawn(&pd) {
-                let shared = std::sync::Arc::new(std::sync::Mutex::new(sp));
-                if let Ok(mut slot) = prover_slot.lock() {
-                    *slot = Some(shared);
-                }
-            }
-        });
-    }
 
     loop {
         // Detect session change -- clear scrollback and reset viewport.
@@ -433,11 +415,9 @@ pub async fn run_app(
                     if state.overlay.is_some() {
                         handle_overlay_key(key, state, &tx, &store);
                     } else if state.command_mode {
-                        let sp = session_prover.lock().ok().and_then(|g| g.clone());
-                        handle_command_mode_key(key, state, &tx, &store, &sp);
+                        handle_command_mode_key(key, state, &tx, &store, &session_prover);
                     } else {
-                        let sp = session_prover.lock().ok().and_then(|g| g.clone());
-                        handle_normal_mode_key(key, state, &tx, &store, &sp);
+                        handle_normal_mode_key(key, state, &tx, &store, &session_prover);
                     }
                 }
                 Event::Paste(text) => {
