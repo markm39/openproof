@@ -35,6 +35,8 @@ def load_corpus_keys(conn):
 
 def extract_premises_from_tactic(annotated_tactic):
     """Extract premise names from annotated tactic string with <a>name</a> tags."""
+    if not isinstance(annotated_tactic, str):
+        annotated_tactic = str(annotated_tactic)
     return re.findall(r'<a>([\w.\']+)</a>', annotated_tactic)
 
 def main():
@@ -49,7 +51,7 @@ def main():
     print("Loading LeanDojo Benchmark 4...", file=sys.stderr)
     try:
         from datasets import load_dataset
-        ds = load_dataset("kaiyuy/LeanDojo_Benchmark_4", cache_dir=CACHE_DIR)
+        ds = load_dataset("JohnYang88/lean-dojo-mathlib4", cache_dir=CACHE_DIR)
     except Exception as e:
         print(f"Failed to load dataset: {e}", file=sys.stderr)
         print("Trying direct download...", file=sys.stderr)
@@ -86,17 +88,40 @@ def main():
                 skipped += 1
                 continue
 
-            # Extract premises from traced tactics
-            traced_tactics = entry.get("traced_tactics", [])
+            # Extract premises from traced tactics (may be JSON string or list)
+            raw_tactics = entry.get("traced_tactics", "")
+            if isinstance(raw_tactics, str):
+                try:
+                    traced_tactics = json.loads(raw_tactics) if raw_tactics else []
+                except json.JSONDecodeError:
+                    # May contain <a>premise</a> tags directly
+                    traced_tactics = [{"annotated_tactic": raw_tactics}]
+            else:
+                traced_tactics = raw_tactics or []
+
             if not traced_tactics:
                 continue
 
             premises_used = set()
             for tactic_entry in traced_tactics:
+                if not isinstance(tactic_entry, dict):
+                    continue
                 annotated = tactic_entry.get("annotated_tactic", "")
-                if annotated:
-                    for premise_name in extract_premises_from_tactic(annotated):
-                        premises_used.add(premise_name)
+                # annotated_tactic is [annotated_string, [premise_info_objects]]
+                if isinstance(annotated, list) and len(annotated) >= 2:
+                    # Extract from the premise info objects directly
+                    for premise_info in annotated[1]:
+                        if isinstance(premise_info, dict):
+                            fn = premise_info.get("full_name", "")
+                            if fn:
+                                premises_used.add(fn)
+                    # Also extract from <a>tags</a> in the annotated string
+                    if isinstance(annotated[0], str):
+                        for pn in extract_premises_from_tactic(annotated[0]):
+                            premises_used.add(pn)
+                elif isinstance(annotated, str):
+                    for pn in extract_premises_from_tactic(annotated):
+                        premises_used.add(pn)
 
             for premise_name in premises_used:
                 premise_label = premise_name.rsplit(".", 1)[-1] if "." in premise_name else premise_name
