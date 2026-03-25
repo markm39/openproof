@@ -122,8 +122,8 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
         openproof_protocol::MessageRole::ToolCall => {
             let tool_name = entry.title.as_deref().unwrap_or("tool");
             // Summarize arguments (show first ~100 chars).
-            let args_summary = if entry.content.len() > 100 {
-                format!("{}...", &entry.content[..100])
+            let args_summary = if entry.content.chars().count() > 100 {
+                format!("{}...", entry.content.chars().take(100).collect::<String>())
             } else {
                 entry.content.clone()
             };
@@ -311,7 +311,7 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
                             openproof_protocol::MessageRole::ToolCall => {
                                 let tool_name = entry.title.as_deref().unwrap_or("tool");
                                 let args_summary = if entry.content.len() > 100 {
-                                    format!("{}...", &entry.content[..100])
+                                    format!("{}...", entry.content.chars().take(100).collect::<String>())
                                 } else {
                                     entry.content.clone()
                                 };
