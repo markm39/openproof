@@ -29,6 +29,8 @@ pub struct ToolContext<'a> {
     pub imports: &'a [String],
     /// Optional lean-lsp-mcp client for structured goal access.
     pub lsp_mcp: Option<Arc<Mutex<LeanLspMcp>>>,
+    /// Optional Pantograph REPL for fast tactic testing (~3ms per tactic).
+    pub pantograph: Option<Arc<Mutex<crate::pantograph::Pantograph>>>,
 }
 
 /// Result of executing a tool.
@@ -206,7 +208,52 @@ fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutpu
 
     let target = sanitize_path(ctx.workspace_dir, file)?;
 
-    // Try MCP for multi-attempt screening
+    // Try Pantograph first (fastest: ~100ms per tactic compile vs 30s)
+    if let Some(ref panto) = ctx.pantograph {
+        if let Ok(mut pg) = panto.lock() {
+            if pg.is_alive() {
+                let content = fs::read_to_string(&target)
+                    .with_context(|| format!("reading {file}"))?;
+                // Strip imports -- Pantograph has Mathlib preloaded
+                let no_imports: String = content.lines()
+                    .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+
+                let mut parts = Vec::new();
+                for tactic in &tactics {
+                    let modified = replace_sorry_at_line(&no_imports, line, tactic);
+                    match pg.verify_content(&modified) {
+                        Ok(result) => {
+                            let status = if result.ok {
+                                "SOLVED"
+                            } else if result.has_sorry {
+                                "ok"
+                            } else {
+                                "FAILED"
+                            };
+                            let mut entry = format!("[{status}] {tactic}");
+                            if status == "FAILED" {
+                                if let Some(err) = result.messages.iter().find(|m| m.contains("error")) {
+                                    entry.push_str(&format!("\n  Error: {}", err.lines().next().unwrap_or("")));
+                                }
+                            }
+                            parts.push(entry);
+                        }
+                        Err(_) => {
+                            parts.push(format!("[FAILED] {tactic}\n  Error: Pantograph error"));
+                        }
+                    }
+                }
+                return Ok(ToolOutput {
+                    success: true,
+                    content: truncate_output(&parts.join("\n")),
+                });
+            }
+        }
+    }
+
+    // Try MCP for multi-attempt screening (fallback)
     if let Some(ref lsp) = ctx.lsp_mcp {
         if let Ok(mut mcp) = lsp.lock() {
             if mcp.is_alive() {

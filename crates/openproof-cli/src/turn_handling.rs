@@ -87,11 +87,17 @@ pub async fn run_agentic_loop(
     let mut turn_used_tools = false;
     let mut last_verify_ok = false;
 
-    // Spawn lean-lsp-mcp for structured goal access (tools: lean_goals, lean_screen_tactics).
-    // Falls back gracefully if unavailable.
+    // Spawn lean-lsp-mcp for structured goal access.
     let lsp_mcp: Option<Arc<Mutex<LeanLspMcp>>> = LeanLspMcp::spawn(&project_dir)
         .map(|client| Arc::new(Mutex::new(client)))
         .ok();
+
+    // Spawn Pantograph for fast tactic testing (~3ms per tactic vs 30s).
+    // Falls back to MCP or lean compile if unavailable.
+    let pantograph: Option<Arc<Mutex<openproof_lean::pantograph::Pantograph>>> =
+        openproof_lean::pantograph::Pantograph::spawn(&project_dir)
+            .map(|pg| Arc::new(Mutex::new(pg)))
+            .ok();
 
     for iteration in 0..MAX_TOOL_ITERATIONS {
         let _ = tx.send(AppEvent::ToolLoopIteration(iteration));
@@ -205,12 +211,14 @@ pub async fn run_agentic_loop(
                             let workspace_dir = workspace_dir.clone();
                             let imports = imports.clone();
                             let lsp_handle = lsp_mcp.clone();
+                            let panto_handle = pantograph.clone();
                             move || {
                                 let ctx = ToolContext {
                                     project_dir: &project_dir,
                                     workspace_dir: &workspace_dir,
                                     imports: &imports,
                                     lsp_mcp: lsp_handle,
+                                    pantograph: panto_handle,
                                 };
                                 execute_tool(&name, &arguments, &ctx)
                             }
@@ -328,10 +336,13 @@ pub fn start_agent_branch_turn(
         let mut turn_used_tools = false;
         let mut last_verify_ok = false;
 
-        // Spawn lean-lsp-mcp for this branch turn (shared with main loop via Arc).
         let branch_lsp_mcp: Option<Arc<Mutex<LeanLspMcp>>> = LeanLspMcp::spawn(&project_dir)
             .map(|c| Arc::new(Mutex::new(c)))
             .ok();
+        let branch_pantograph: Option<Arc<Mutex<openproof_lean::pantograph::Pantograph>>> =
+            openproof_lean::pantograph::Pantograph::spawn(&project_dir)
+                .map(|pg| Arc::new(Mutex::new(pg)))
+                .ok();
 
         for _iteration in 0..MAX_TOOL_ITERATIONS {
             let result = run_codex_turn_with_events(
@@ -393,12 +404,14 @@ pub fn start_agent_branch_turn(
                                 let workspace_dir = workspace_dir.clone();
                                 let imports = imports.clone();
                                 let lsp_handle = branch_lsp_mcp.clone();
+                                let panto_handle = branch_pantograph.clone();
                                 move || {
                                     let ctx = ToolContext {
                                         project_dir: &project_dir,
                                         workspace_dir: &workspace_dir,
                                         imports: &imports,
                                         lsp_mcp: lsp_handle,
+                                        pantograph: panto_handle,
                                     };
                                     execute_tool(&name, &arguments, &ctx)
                                 }
