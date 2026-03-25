@@ -120,28 +120,16 @@ fn build_compilation_unit(content: &str, ctx: &ToolContext) -> String {
     };
 
     let mut lines = user_imports;
-    lines.push(String::new());
 
-    // Inject corpus declarations if CorpusHits.lean exists in workspace
-    let corpus_path = ctx.workspace_dir.join("CorpusHits.lean");
-    if corpus_path.exists() {
-        if let Ok(corpus_content) = fs::read_to_string(&corpus_path) {
-            let corpus_body = corpus_content
-                .lines()
-                .filter(|l| {
-                    let t = l.trim();
-                    !t.starts_with("import ") && !t.starts_with("open ")
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            if !corpus_body.trim().is_empty() {
-                lines.push("-- [corpus: verified declarations from previous sessions]".to_string());
-                lines.push(corpus_body);
-                lines.push(String::new());
-            }
+    // Import the compiled corpus module if its olean exists.
+    // This makes all previously verified proofs available as native Lean declarations.
+    if crate::corpus_module::corpus_olean_exists(ctx.project_dir) {
+        if !lines.iter().any(|l| l.contains("OpenProof.Corpus")) {
+            lines.push("import OpenProof.Corpus".to_string());
         }
     }
 
+    lines.push(String::new());
     lines.push(body);
     lines.join("\n")
 }

@@ -104,6 +104,42 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
         original_hook(info);
     }));
 
+    // Sync cloud corpus -> OpenProof/Corpus.lean -> olean (background).
+    // Non-blocking: TUI starts immediately, corpus compiles in parallel.
+    {
+        let pd = resolve_lean_project_dir();
+        tokio::spawn(async move {
+            let cloud = openproof_cloud::CloudCorpusClient::new(Default::default());
+            if !cloud.is_configured() {
+                return;
+            }
+            let mut all_items = Vec::new();
+            let mut offset = 0usize;
+            loop {
+                match cloud.fetch_all_user_verified(500, offset).await {
+                    Ok((items, _total)) => {
+                        let n = items.len();
+                        for item in items {
+                            all_items.push(openproof_lean::corpus_module::CorpusDeclaration {
+                                label: item.label,
+                                statement: item.statement,
+                                artifact_content: item.artifact_content,
+                            });
+                        }
+                        if n < 500 { break; }
+                        offset += 500;
+                    }
+                    Err(_) => break,
+                }
+            }
+            if !all_items.is_empty() {
+                let _ = tokio::task::spawn_blocking(move || {
+                    openproof_lean::corpus_module::build_corpus_module(&pd, &all_items)
+                }).await;
+            }
+        });
+    }
+
     // Spawn Pantograph in background (loads Mathlib ~18s).
     // TUI launches immediately. Tool calls wait for it via the OnceCell.
     let lean_project_dir = resolve_lean_project_dir();

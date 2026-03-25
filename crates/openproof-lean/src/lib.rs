@@ -1,5 +1,6 @@
 //! Lean toolchain interaction: verification, parsing, rendering, goal extraction.
 
+pub mod corpus_module;
 pub mod goal_state;
 pub mod goals;
 pub mod lsp_mcp;

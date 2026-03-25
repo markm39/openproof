@@ -182,28 +182,19 @@ pub async fn run_agentic_loop(
 
                         // Local FTS search (with graph expansion)
                         let mut has_verified_proof = false;
-                        let mut corpus_declarations = Vec::new();
                         if let Ok(local_hits) = store.search_verified_corpus(&query, 10) {
                             for (label, statement, _vis) in &local_hits {
-                                if let Ok(Some(proof_code)) = store.get_artifact_content(label) {
+                                if let Ok(Some(_proof_code)) = store.get_artifact_content(label) {
                                     has_verified_proof = true;
-                                    corpus_declarations.push(proof_code.clone());
+                                    // Corpus proofs are available via `import OpenProof.Corpus`
+                                    // (compiled Lean module synced from cloud on startup).
                                     results.push(format!(
-                                        "*** VERIFIED PROOF LOADED into your environment -- use `exact {label}` or reference it directly: ***\n- {label} :: {statement}"
+                                        "*** VERIFIED PROOF available via `import OpenProof.Corpus` -- use `exact {label}` directly: ***\n- {label} :: {statement}"
                                     ));
                                 } else {
                                     results.push(format!("- {label} :: {statement}"));
                                 }
                             }
-                        }
-                        // Write corpus declarations to workspace so lean_verify can compile them
-                        if !corpus_declarations.is_empty() {
-                            let workspace_dir = store.workspace_dir(session_id);
-                            let corpus_path = workspace_dir.join("CorpusHits.lean");
-                            let _ = std::fs::write(
-                                &corpus_path,
-                                format!("import Mathlib\n\n{}", corpus_declarations.join("\n\n")),
-                            );
                         }
 
                         // Skip slow cloud queries when we already have a verified proof with code.
@@ -335,7 +326,7 @@ pub async fn run_agentic_loop(
         let mut all_lean = String::new();
         if let Ok(files) = store.list_workspace_files(session_id) {
             for (path, _) in &files {
-                if path.ends_with(".lean") && !path.contains("history/") && path != "CorpusHits.lean" {
+                if path.ends_with(".lean") && !path.contains("history/") {
                     if let Ok(content) = std::fs::read_to_string(workspace_dir.join(path)) {
                         if !all_lean.is_empty() {
                             all_lean.push_str("\n\n");
@@ -543,7 +534,7 @@ pub fn start_agent_branch_turn(
             let mut all_lean = String::new();
             if let Ok(files) = store.list_workspace_files(&session_snapshot.id) {
                 for (path, _) in &files {
-                    if path.ends_with(".lean") && !path.contains("history/") && path != "CorpusHits.lean" {
+                    if path.ends_with(".lean") && !path.contains("history/") {
                         if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
                             if !all_lean.is_empty() {
                                 all_lean.push_str("\n\n");

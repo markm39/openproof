@@ -186,7 +186,37 @@ impl AppStore {
         let conn = self.connect()?;
         let tx = conn.unchecked_transaction()?;
         let now = result.checked_at.clone();
-        let content_hash = stable_hash(&node.content);
+
+        // Build self-contained artifact content: imports + all helper declarations + main theorem.
+        // This ensures the artifact can be compiled standalone without missing dependencies.
+        let self_contained_content = {
+            let mut parts = String::new();
+            // Include sibling nodes (helpers/lemmas the main theorem depends on)
+            let mut seen_labels = std::collections::BTreeSet::new();
+            for sibling in &session.proof.nodes {
+                if sibling.id == node.id || sibling.content.trim().is_empty() {
+                    continue;
+                }
+                if !seen_labels.insert(sibling.label.clone()) {
+                    continue;
+                }
+                let clean = sibling.content.lines()
+                    .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
+                    .collect::<Vec<_>>().join("\n");
+                if !clean.trim().is_empty() {
+                    parts.push_str(clean.trim());
+                    parts.push_str("\n\n");
+                }
+            }
+            // Add the active node
+            let clean_node = node.content.lines()
+                .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
+                .collect::<Vec<_>>().join("\n");
+            parts.push_str(clean_node.trim());
+            parts
+        };
+
+        let content_hash = stable_hash(&self_contained_content);
         let artifact_id = format!("artifact_{}", content_hash);
         tx.execute(
             r#"
@@ -205,7 +235,7 @@ impl AppStore {
                 artifact_id,
                 content_hash,
                 node.label,
-                node.content,
+                self_contained_content,
                 serde_json::to_string(&session.proof.imports)?,
                 Option::<String>::None,
                 serde_json::to_string(&serde_json::json!({
@@ -298,6 +328,64 @@ impl AppStore {
                     now,
                 ],
             )?;
+
+            // Store ALL sibling nodes (helper lemmas, defs) as separate corpus entries.
+            // This ensures helper lemmas like Zsqrtd_norm_ne_two are individually discoverable.
+            for sibling in &session.proof.nodes {
+                if sibling.id == node.id || sibling.content.trim().is_empty() {
+                    continue;
+                }
+                let sib_clean = sibling.content.lines()
+                    .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
+                    .collect::<Vec<_>>().join("\n");
+                let sib_clean = sib_clean.trim();
+                if sib_clean.is_empty() {
+                    continue;
+                }
+                let sib_content_hash = stable_hash(sib_clean);
+                let sib_artifact_id = format!("artifact_{}", sib_content_hash);
+                // Insert artifact for sibling
+                let _ = tx.execute(
+                    r#"
+                    INSERT OR IGNORE INTO verified_artifacts
+                    (id, artifact_hash, label, content, imports_json, namespace, metadata_json, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, '{}', ?, ?)
+                    "#,
+                    params![
+                        &sib_artifact_id, &sib_content_hash, sibling.label, sib_clean,
+                        serde_json::to_string(&session.proof.imports)?,
+                        Option::<String>::None, &now, &now,
+                    ],
+                );
+                let sib_identity_key = format!(
+                    "user-verified/{}/{}/{}",
+                    sanitize_identity_segment(session.id.as_str()),
+                    sanitize_identity_segment(sibling.label.as_str()),
+                    stable_hash(sibling.statement.as_str())
+                );
+                let sib_kind = match sibling.kind {
+                    ProofNodeKind::Lemma => "lemma",
+                    ProofNodeKind::Theorem => "theorem",
+                    _ => "def",
+                };
+                let _ = tx.execute(
+                    r#"
+                    INSERT INTO verified_corpus_items
+                    (id, statement_hash, identity_key, label, statement, content_hash, artifact_id, verification_run_id, visibility, decl_kind, search_text, origin, imports_json, metadata_json, source_session_id, source_node_id, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'user-verified', ?, '{}', ?, ?, ?, ?)
+                    ON CONFLICT(identity_key) DO NOTHING
+                    "#,
+                    params![
+                        next_store_id("corpus"), stable_hash(sibling.statement.as_str()),
+                        sib_identity_key, sibling.label, sibling.statement,
+                        sib_content_hash, sib_artifact_id, &verification_run_id,
+                        &visibility, sib_kind,
+                        format!("{} {} {}", sibling.label, sibling.statement, sib_clean),
+                        serde_json::to_string(&session.proof.imports)?,
+                        session.id, sibling.id, &now, &now,
+                    ],
+                );
+            }
 
             if session.cloud.sync_enabled && session.cloud.share_mode != ShareMode::Local {
                 // Build full artifact content with imports + all sibling nodes
