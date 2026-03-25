@@ -8,3 +8,4 @@ lean/build/
 .bun/
 target/
 CLAUDE.md
+benchmarks/miniF2F-lean4/

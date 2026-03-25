@@ -1,30 +1,30 @@
 #!/bin/bash
-# Run OpenProof against miniF2F-test problems.
-# Usage: ./run_minif2f.sh [timeout_per_problem_seconds] [max_problems]
+# Run OpenProof against miniF2F-test problems (244 problems).
+# Usage: ./benchmarks/run_minif2f.sh [timeout_secs] [max_problems] [start_from]
 
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
-TIMEOUT=${1:-300}  # 5 min per problem default
-MAX=${2:-0}        # 0 = all problems
+TIMEOUT=${1:-300}
+MAX=${2:-0}
+START=${3:-0}
 RESULTS_DIR="benchmarks/results/$(date +%Y%m%d_%H%M%S)"
 mkdir -p "$RESULTS_DIR"
 
-# Check if miniF2F is downloaded
-MINIF2F_DIR="benchmarks/miniF2F-lean4"
-if [ ! -d "$MINIF2F_DIR" ]; then
-    echo "Downloading miniF2F Lean 4 problems..."
-    git clone https://github.com/openai/miniF2F.git "$MINIF2F_DIR" 2>/dev/null || {
-        echo "Failed to clone miniF2F. Check https://github.com/openai/miniF2F"
-        exit 1
-    }
+MINIF2F="benchmarks/miniF2F-lean4/MiniF2F/Test"
+if [ ! -d "$MINIF2F" ]; then
+    echo "miniF2F not found. Run: git clone https://github.com/yangky11/miniF2F-lean4.git benchmarks/miniF2F-lean4"
+    exit 1
 fi
 
-# Find test problems (Lean 4 format)
-PROBLEMS=$(find "$MINIF2F_DIR" -name "*.lean" -path "*/test/*" | sort)
+PROBLEMS=$(find "$MINIF2F" -name "*.lean" | sort)
 TOTAL=$(echo "$PROBLEMS" | wc -l | tr -d ' ')
-echo "Found $TOTAL test problems"
+echo "Found $TOTAL test problems (timeout=${TIMEOUT}s per problem)"
 
-if [ "$MAX" -gt 0 ] && [ "$MAX" -lt "$TOTAL" ]; then
+if [ "$START" -gt 0 ]; then
+    PROBLEMS=$(echo "$PROBLEMS" | tail -n +$((START + 1)))
+fi
+if [ "$MAX" -gt 0 ]; then
     PROBLEMS=$(echo "$PROBLEMS" | head -n "$MAX")
     TOTAL=$MAX
 fi
@@ -32,43 +32,58 @@ fi
 SOLVED=0
 FAILED=0
 ERRORED=0
+IDX=0
 
 for PROBLEM_FILE in $PROBLEMS; do
+    IDX=$((IDX + 1))
     PROBLEM_NAME=$(basename "$PROBLEM_FILE" .lean)
-    echo -n "[$((SOLVED + FAILED + ERRORED + 1))/$TOTAL] $PROBLEM_NAME ... "
 
-    # Extract the theorem statement from the file
-    STATEMENT=$(grep -m1 "theorem\|lemma" "$PROBLEM_FILE" | sed 's/^.*theorem /theorem /; s/^.*lemma /lemma /' | head -1)
+    # Extract theorem statement (everything between 'theorem' and ':= by sorry')
+    STATEMENT=$(sed -n '/^theorem\|^lemma/,/:= by sorry/p' "$PROBLEM_FILE" | tr '\n' ' ' | sed 's/:= by sorry.*//')
     if [ -z "$STATEMENT" ]; then
-        echo "SKIP (no theorem found)"
+        echo "[$IDX/$TOTAL] $PROBLEM_NAME ... SKIP (no theorem)"
         continue
     fi
 
-    # Run OpenProof headless with timeout
-    START=$(date +%s)
-    RESULT=$(timeout "$TIMEOUT" cargo run -q -- run --problem "Prove: $STATEMENT" 2>"$RESULTS_DIR/${PROBLEM_NAME}.log" || echo "TIMEOUT_OR_ERROR")
-    END=$(date +%s)
-    ELAPSED=$((END - START))
+    echo -n "[$IDX/$TOTAL] $PROBLEM_NAME ... "
 
-    # Check if verification succeeded
-    if grep -q "All nodes verified\|VERIFIED" "$RESULTS_DIR/${PROBLEM_NAME}.log" 2>/dev/null; then
+    START_TIME=$(date +%s)
+    LOG="$RESULTS_DIR/${PROBLEM_NAME}.log"
+
+    timeout "$TIMEOUT" cargo run -q -- run --problem "Prove in Lean 4: $STATEMENT" > "$LOG" 2>&1 || true
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+
+    if grep -q "All proof nodes verified\|All nodes verified\|DIRECT VERIFICATION SUCCEEDED" "$LOG" 2>/dev/null; then
         echo "SOLVED (${ELAPSED}s)"
         SOLVED=$((SOLVED + 1))
-        echo "$PROBLEM_NAME SOLVED $ELAPSED" >> "$RESULTS_DIR/summary.txt"
-    elif echo "$RESULT" | grep -q "TIMEOUT_OR_ERROR"; then
+        echo "SOLVED $ELAPSED $PROBLEM_NAME" >> "$RESULTS_DIR/summary.txt"
+    elif [ "$ELAPSED" -ge "$TIMEOUT" ]; then
         echo "TIMEOUT (${ELAPSED}s)"
         ERRORED=$((ERRORED + 1))
-        echo "$PROBLEM_NAME TIMEOUT $ELAPSED" >> "$RESULTS_DIR/summary.txt"
+        echo "TIMEOUT $ELAPSED $PROBLEM_NAME" >> "$RESULTS_DIR/summary.txt"
     else
         echo "FAILED (${ELAPSED}s)"
         FAILED=$((FAILED + 1))
-        echo "$PROBLEM_NAME FAILED $ELAPSED" >> "$RESULTS_DIR/summary.txt"
+        echo "FAILED $ELAPSED $PROBLEM_NAME" >> "$RESULTS_DIR/summary.txt"
+    fi
+
+    ATTEMPTED=$((SOLVED + FAILED + ERRORED))
+    if [ "$ATTEMPTED" -gt 0 ]; then
+        PCT=$((SOLVED * 100 / ATTEMPTED))
+        echo "  Running: $SOLVED/$ATTEMPTED ($PCT%) solved"
     fi
 done
 
 echo ""
-echo "=== Results ==="
-echo "Solved: $SOLVED / $TOTAL ($(( SOLVED * 100 / TOTAL ))%)"
-echo "Failed: $FAILED"
-echo "Timeout/Error: $ERRORED"
-echo "Results saved to: $RESULTS_DIR/"
+echo "==============================="
+echo "  miniF2F Benchmark Results"
+echo "==============================="
+echo "Solved:  $SOLVED / $((SOLVED + FAILED + ERRORED))"
+echo "Failed:  $FAILED"
+echo "Timeout: $ERRORED"
+if [ "$((SOLVED + FAILED + ERRORED))" -gt 0 ]; then
+    echo "Rate:    $((SOLVED * 100 / (SOLVED + FAILED + ERRORED)))%"
+fi
+echo "Results: $RESULTS_DIR/"
+echo "==============================="
