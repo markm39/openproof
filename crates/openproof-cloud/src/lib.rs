@@ -495,6 +495,82 @@ impl CloudCorpusClient {
             .context("corpus edge upload failed")?;
         Ok(())
     }
+
+    /// Fetch user-verified items in bulk for building a local Lean module.
+    /// Returns (items, total_count). Use limit/offset for pagination.
+    pub async fn fetch_all_user_verified(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<CorpusExportItem>, usize)> {
+        let base_url = match self.base_url() {
+            Some(url) => url,
+            None => return Ok((Vec::new(), 0)),
+        };
+        let response = self
+            .client
+            .get(format!("{base_url}/api/v1/items/export"))
+            .query(&[
+                ("limit", &limit.to_string()),
+                ("offset", &offset.to_string()),
+            ])
+            .send()
+            .await
+            .context("corpus export request failed")?;
+        if !response.status().is_success() {
+            anyhow::bail!(
+                "corpus export request failed with status {}",
+                response.status().as_u16()
+            );
+        }
+        let payload: serde_json::Value = response
+            .json()
+            .await
+            .context("parsing export response")?;
+        let total = payload
+            .get("total")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        let items = payload
+            .get("items")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|h| {
+                        Some(CorpusExportItem {
+                            identity_key: h.get("identityKey")?.as_str()?.to_string(),
+                            label: h.get("label")?.as_str()?.to_string(),
+                            statement: h
+                                .get("statement")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            decl_kind: h
+                                .get("declKind")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string()),
+                            artifact_content: h
+                                .get("artifactContent")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok((items, total))
+    }
+}
+
+/// A single item from a bulk corpus export.
+#[derive(Debug, Clone)]
+pub struct CorpusExportItem {
+    pub identity_key: String,
+    pub label: String,
+    pub statement: String,
+    pub decl_kind: Option<String>,
+    pub artifact_content: String,
 }
 
 /// A semantic search hit from the cloud corpus.
