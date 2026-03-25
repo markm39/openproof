@@ -219,7 +219,8 @@ pub(crate) fn open_connection(db_path: &Path) -> Result<Connection> {
             to_item_key TEXT NOT NULL,
             edge_type TEXT NOT NULL,
             confidence REAL NOT NULL DEFAULT 1.0,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            UNIQUE(from_item_key, to_item_key, edge_type)
         );
         CREATE INDEX IF NOT EXISTS idx_corpus_edges_from ON corpus_edges(from_item_key);
         CREATE INDEX IF NOT EXISTS idx_corpus_edges_to ON corpus_edges(to_item_key);
@@ -280,6 +281,34 @@ pub(crate) fn open_connection(db_path: &Path) -> Result<Connection> {
         if has_session_json {
             // Old schema detected. Drop all sessions so they get re-imported.
             let _ = conn.execute("DELETE FROM sessions", []);
+        }
+    }
+
+    // Migrate corpus_edges to have unique constraint on (from, to, type).
+    // Deduplicate existing edges in the process.
+    {
+        let has_unique: bool = conn
+            .prepare("SELECT sql FROM sqlite_master WHERE name='corpus_edges'")
+            .and_then(|mut s| s.query_row([], |r| r.get::<_, String>(0)))
+            .map(|sql| sql.contains("UNIQUE"))
+            .unwrap_or(true); // if table doesn't exist, CREATE TABLE above handles it
+        if !has_unique {
+            let _ = conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS corpus_edges_new (
+                    id TEXT PRIMARY KEY,
+                    from_item_key TEXT NOT NULL,
+                    to_item_key TEXT NOT NULL,
+                    edge_type TEXT NOT NULL,
+                    confidence REAL NOT NULL DEFAULT 1.0,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(from_item_key, to_item_key, edge_type)
+                );
+                INSERT OR IGNORE INTO corpus_edges_new SELECT * FROM corpus_edges;
+                DROP TABLE corpus_edges;
+                ALTER TABLE corpus_edges_new RENAME TO corpus_edges;
+                CREATE INDEX IF NOT EXISTS idx_corpus_edges_from ON corpus_edges(from_item_key);
+                CREATE INDEX IF NOT EXISTS idx_corpus_edges_to ON corpus_edges(to_item_key);"
+            );
         }
     }
 

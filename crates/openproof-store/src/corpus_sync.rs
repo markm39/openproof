@@ -388,18 +388,20 @@ impl AppStore {
         let conn = self.connect()?;
         let now = chrono::Utc::now().to_rfc3339();
         let id = format!("edge_{}", crate::corpus::next_store_id("edge"));
-        conn.execute(
+        let changes = conn.execute(
             "INSERT OR IGNORE INTO corpus_edges (id, from_item_key, to_item_key, edge_type, confidence, created_at) VALUES (?, ?, ?, ?, ?, ?)",
             rusqlite::params![id, from_key, to_key, edge_type, confidence, &now],
         )?;
-        // Queue for cloud sync
-        let payload = format!(
-            "{{\"edges\":[{{\"from_item_key\":\"{from_key}\",\"to_item_key\":\"{to_key}\",\"edge_type\":\"{edge_type}\",\"confidence\":{confidence}}}]}}"
-        );
-        conn.execute(
-            "INSERT INTO sync_queue (id, session_id, queue_type, payload_json, status, created_at, updated_at) VALUES (?, '', 'corpus.edges', ?, 'pending', ?, ?)",
-            rusqlite::params![crate::corpus::next_store_id("sync"), payload, &now, &now],
-        )?;
+        // Only queue for cloud sync if the edge was actually new
+        if changes > 0 {
+            let payload = serde_json::json!({
+                "edges": [{"from_item_key": from_key, "to_item_key": to_key, "edge_type": edge_type, "confidence": confidence}]
+            });
+            conn.execute(
+                "INSERT INTO sync_queue (id, session_id, queue_type, payload_json, status, created_at, updated_at) VALUES (?, '', 'corpus.edges', ?, 'pending', ?, ?)",
+                rusqlite::params![crate::corpus::next_store_id("sync"), serde_json::to_string(&payload)?, &now, &now],
+            )?;
+        }
         Ok(())
     }
 
