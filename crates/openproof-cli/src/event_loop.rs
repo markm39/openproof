@@ -26,7 +26,7 @@ pub async fn run_app(
     state: &mut AppState,
     tx: mpsc::UnboundedSender<AppEvent>,
     rx: &mut mpsc::UnboundedReceiver<AppEvent>,
-    session_prover: Option<openproof_lean::proof_tree::SharedProver>,
+    session_prover: std::sync::Arc<std::sync::OnceLock<openproof_lean::proof_tree::SharedProver>>,
 ) -> anyhow::Result<()> {
     let mut last_session_id = state
         .current_session()
@@ -449,7 +449,7 @@ fn handle_normal_mode_key(
     state: &mut AppState,
     tx: &mpsc::UnboundedSender<AppEvent>,
     store: &AppStore,
-    prover: &Option<openproof_lean::proof_tree::SharedProver>,
+    prover: &crate::turn_handling::LazyProver,
 ) {
     let next_event = match key.code {
         KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {

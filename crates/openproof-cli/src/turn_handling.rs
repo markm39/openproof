@@ -24,12 +24,15 @@ use tokio::sync::mpsc;
 /// Maximum number of tool-loop iterations per turn.
 const MAX_TOOL_ITERATIONS: usize = 40;
 
+/// Type alias for the lazy Pantograph handle. Resolves when Mathlib is loaded.
+pub type LazyProver = std::sync::Arc<std::sync::OnceLock<openproof_lean::proof_tree::SharedProver>>;
+
 pub fn handle_submission(
     tx: mpsc::UnboundedSender<AppEvent>,
     store: AppStore,
     state: &mut AppState,
     submission: SubmittedInput,
-    prover: Option<openproof_lean::proof_tree::SharedProver>,
+    prover: LazyProver,
 ) {
     if submission.raw_text.trim_start().starts_with('/') {
         crate::slash_commands::apply_local_command(tx, state, store, submission);
@@ -52,13 +55,21 @@ pub fn handle_submission(
         let messages =
             build_turn_messages_with_retrieval(&store_for_model, Some(&session_snapshot)).await;
 
+        // Wait for Pantograph to finish loading Mathlib (blocks this task, not TUI).
+        let resolved_prover = loop {
+            if let Some(p) = prover.get().cloned() {
+                break Some(p);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        };
+
         run_agentic_loop(
             tx_model,
             store_for_model,
             &submission.session_id,
             messages,
             &session_snapshot,
-            prover,
+            resolved_prover,
         )
         .await;
     });
@@ -746,7 +757,7 @@ pub fn submit_selected_question_option(
                 session: submitted.session_snapshot.clone(),
             },
         );
-        handle_submission(tx, store, state, submitted, None);
+        handle_submission(tx, store, state, submitted, std::sync::Arc::new(std::sync::OnceLock::new()));
     }
 }
 

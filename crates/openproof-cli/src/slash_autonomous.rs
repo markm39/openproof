@@ -281,7 +281,7 @@ pub fn cmd_answer(
                 session: submitted.session_snapshot.clone(),
             },
         );
-        handle_submission(tx, store, state, submitted, None);
+        handle_submission(tx, store, state, submitted, std::sync::Arc::new(std::sync::OnceLock::new()));
     } else {
         emit_local_notice(
             tx,
