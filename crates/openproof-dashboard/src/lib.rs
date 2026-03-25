@@ -464,6 +464,8 @@ fn build_session_summary(session: &SessionSnapshot) -> DashboardSessionSummary {
             MessageRole::Notice => "notice".to_string(),
             MessageRole::ToolCall => "tool_call".to_string(),
             MessageRole::ToolResult => "tool_result".to_string(),
+            MessageRole::Diff => "diff".to_string(),
+            MessageRole::Thought => "thought".to_string(),
         }),
         last_excerpt: last_entry.map(|entry| match entry.role {
             MessageRole::ToolCall => {

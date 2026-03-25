@@ -105,6 +105,7 @@ mod tests {
                 workspace_files: Vec::new(),
                 tool_iteration_count: 0,
                 search_strategy: Default::default(),
+                activity_log: Vec::new(),
             },
         }
     }

@@ -130,6 +130,7 @@ pub fn default_session_with_workspace(
             workspace_files: Vec::new(),
             tool_iteration_count: 0,
             search_strategy: Default::default(),
+            activity_log: Vec::new(),
         },
     }
 }
