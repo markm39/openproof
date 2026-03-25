@@ -38,8 +38,11 @@ for PROBLEM_FILE in $PROBLEMS; do
     IDX=$((IDX + 1))
     PROBLEM_NAME=$(basename "$PROBLEM_FILE" .lean)
 
-    # Extract theorem statement (everything between 'theorem' and ':= by sorry')
-    STATEMENT=$(sed -n '/^theorem\|^lemma/,/:= by sorry/p' "$PROBLEM_FILE" | tr '\n' ' ' | sed 's/:= by sorry.*//')
+    # Extract full theorem statement (collapse newlines, grab theorem...sorry)
+    STATEMENT=$(cat "$PROBLEM_FILE" | tr '\n' ' ' | sed 's/.*\(theorem .*\):= by sorry.*/\1/' | grep '^theorem ' | head -1)
+    if [ -z "$STATEMENT" ]; then
+        STATEMENT=$(cat "$PROBLEM_FILE" | tr '\n' ' ' | sed 's/.*\(lemma .*\):= by sorry.*/\1/' | grep '^lemma ' | head -1)
+    fi
     if [ -z "$STATEMENT" ]; then
         echo "[$IDX/$TOTAL] $PROBLEM_NAME ... SKIP (no theorem)"
         continue
