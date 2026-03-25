@@ -192,6 +192,10 @@ pub struct AppState {
     pub tool_loop_iteration: usize,
     /// Name of the tool currently being executed (for status bar).
     pub current_tool_name: Option<String>,
+    /// Human-readable activity description for the status bar.
+    pub activity_label: String,
+    /// When the current activity phase started.
+    pub activity_started_at: Option<std::time::Instant>,
 }
 
 impl AppState {
@@ -242,6 +246,8 @@ impl AppState {
             tool_loop_active: false,
             tool_loop_iteration: 0,
             current_tool_name: None,
+            activity_label: String::new(),
+            activity_started_at: None,
         }
     }
 }

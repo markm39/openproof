@@ -11,6 +11,10 @@ pub enum MessageRole {
     Notice,
     ToolCall,
     ToolResult,
+    /// File change with colored diff lines.
+    Diff,
+    /// Model's reasoning/thinking (shown as dim text).
+    Thought,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -72,6 +76,15 @@ pub enum ProofNodeStatus {
     Verified,
     Failed,
     Abandoned,
+}
+
+/// A timestamped activity event for the dashboard feed.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ActivityEntry {
+    pub timestamp: String,
+    pub kind: String,
+    pub message: String,
 }
 
 /// Status of a proof goal in the Pantograph proof tree.
@@ -298,6 +311,8 @@ pub struct ProofSessionState {
     pub nodes: Vec<ProofNode>,
     /// Live proof goals from Pantograph proof tree (shown in dashboard).
     pub proof_goals: Vec<ProofGoal>,
+    /// Recent activity log for dashboard feed (last 50 entries).
+    pub activity_log: Vec<ActivityEntry>,
     pub branches: Vec<ProofBranch>,
     pub agents: Vec<AgentRecord>,
     pub last_rendered_scratch: Option<String>,

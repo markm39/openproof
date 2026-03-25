@@ -461,6 +461,35 @@ impl AppState {
     ) -> Option<PendingWrite> {
         self.tool_loop_active = true;
         self.current_tool_name = Some(tool_name.clone());
+        // Set human-readable activity label based on tool name
+        self.activity_label = match tool_name.as_str() {
+            "lean_verify" => "verifying proof...".to_string(),
+            "lean_goals" => "extracting goals...".to_string(),
+            "lean_screen_tactics" => "testing tactics...".to_string(),
+            "lean_check" => "checking type...".to_string(),
+            "lean_search_tactic" => "searching for tactic...".to_string(),
+            "corpus_search" => "searching corpus...".to_string(),
+            "file_write" => "writing file...".to_string(),
+            "file_patch" => "patching file...".to_string(),
+            "file_read" => "reading file...".to_string(),
+            "workspace_ls" => "listing workspace...".to_string(),
+            "shell_run" => "running command...".to_string(),
+            _ => format!("running {tool_name}..."),
+        };
+        self.activity_started_at = Some(std::time::Instant::now());
+        // Push to session activity log
+        let activity_msg = self.activity_label.clone();
+        if let Some(session) = self.current_session_mut() {
+            session.proof.activity_log.push(openproof_protocol::ActivityEntry {
+                timestamp: Utc::now().to_rfc3339(),
+                kind: "tool".to_string(),
+                message: activity_msg,
+            });
+            // Cap at 50 entries
+            if session.proof.activity_log.len() > 50 {
+                session.proof.activity_log.drain(..session.proof.activity_log.len() - 50);
+            }
+        }
         let entry = TranscriptEntry {
             id: next_id("tool_call"),
             role: MessageRole::ToolCall,
@@ -487,6 +516,8 @@ impl AppState {
         output: String,
     ) -> Option<PendingWrite> {
         self.current_tool_name = None;
+        self.activity_label = "thinking...".to_string();
+        self.activity_started_at = Some(std::time::Instant::now());
         let status_word = if success { "ok" } else { "failed" };
         self.status = format!("Tool {tool_name}: {status_word}");
         let entry = TranscriptEntry {

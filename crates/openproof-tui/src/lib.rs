@@ -161,6 +161,33 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
                 )));
             }
         }
+        openproof_protocol::MessageRole::Diff => {
+            let filename = entry.title.as_deref().unwrap_or("file");
+            lines.push(Line::from(Span::styled(
+                format!("  {filename}"),
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            )));
+            for diff_line in entry.content.lines().take(30) {
+                let style = if diff_line.starts_with('+') && !diff_line.starts_with("+++") {
+                    Style::default().fg(Color::Green)
+                } else if diff_line.starts_with('-') && !diff_line.starts_with("---") {
+                    Style::default().fg(Color::Red)
+                } else if diff_line.starts_with("@@") {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM)
+                } else {
+                    Style::default().fg(Color::DarkGray)
+                };
+                lines.push(Line::from(Span::styled(format!("  {diff_line}"), style)));
+            }
+        }
+        openproof_protocol::MessageRole::Thought => {
+            for thought_line in entry.content.lines() {
+                lines.push(Line::from(Span::styled(
+                    format!("  > {thought_line}"),
+                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+                )));
+            }
+        }
         _ => {
             for content_line in entry.content.lines() {
                 lines.push(Line::from(Span::styled(
@@ -513,24 +540,28 @@ fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
         .unwrap_or(0);
 
     let text = if state.turn_in_flight || state.verification_in_flight {
-        let tool_info = if state.tool_loop_active {
-            if let Some(ref name) = state.current_tool_name {
-                format!(" | tool: {name} (iter {}/{})", state.tool_loop_iteration + 1, 40)
-            } else {
-                format!(" | tool loop (iter {}/{})", state.tool_loop_iteration + 1, 40)
-            }
+        let elapsed = state.activity_started_at
+            .map(|t| t.elapsed().as_secs())
+            .unwrap_or(0);
+        let elapsed_str = if elapsed > 0 { format!(" ({elapsed}s)") } else { String::new() };
+        let label = if !state.activity_label.is_empty() {
+            state.activity_label.clone()
+        } else if state.verification_in_flight {
+            "verifying...".to_string()
+        } else {
+            "working...".to_string()
+        };
+        let iter_info = if state.tool_loop_active {
+            format!(" (iter {}/40)", state.tool_loop_iteration + 1)
         } else {
             String::new()
         };
-        let activity = match (state.turn_in_flight, state.verification_in_flight, is_autonomous) {
-            (true, true, true) => format!(" autonomous (iter {auto_iter}) | working + verifying...{tool_info}"),
-            (true, false, true) => format!(" autonomous (iter {auto_iter}) | working...{tool_info}"),
-            (false, true, true) => format!(" autonomous (iter {auto_iter}) | verifying..."),
-            (true, true, false) => format!(" working + verifying...{tool_info}"),
-            (true, false, false) => format!(" working...{tool_info}"),
-            (false, true, false) => " verifying...".to_string(),
-            _ => String::new(),
+        let auto_prefix = if is_autonomous {
+            format!(" autonomous (iter {auto_iter}) | ")
+        } else {
+            " ".to_string()
         };
+        let activity = format!("{auto_prefix}{label}{elapsed_str}{iter_info}");
         Span::styled(activity, Style::default().fg(Color::Yellow))
     } else if is_autonomous {
         let full = state.current_session()

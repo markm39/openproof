@@ -12,16 +12,21 @@ impl AppState {
         self.turn_started_at = Some(std::time::Instant::now());
         self.streaming_text.clear();
         self.status = "Running assistant turn...".to_string();
+        self.activity_label = "thinking...".to_string();
+        self.activity_started_at = Some(std::time::Instant::now());
     }
 
     pub(crate) fn apply_reasoning_started(&mut self) {
         self.status = "Reasoning...".to_string();
+        self.activity_label = "reasoning...".to_string();
+        self.activity_started_at = Some(std::time::Instant::now());
     }
 
     pub(crate) fn apply_stream_delta(&mut self, delta: String) {
         self.streaming_text.push_str(&delta);
-        if self.status.starts_with("Reasoning") {
-            self.status = "Streaming response...".to_string();
+        if self.activity_label.starts_with("reasoning") {
+            self.activity_label = "generating response...".to_string();
+            self.activity_started_at = Some(std::time::Instant::now());
         }
     }
 
@@ -46,6 +51,8 @@ impl AppState {
         self.tool_loop_active = false;
         self.tool_loop_iteration = 0;
         self.current_tool_name = None;
+        self.activity_label.clear();
+        self.activity_started_at = None;
         if !self.verification_in_flight {
             self.status = "Ready.".to_string();
         }

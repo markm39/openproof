@@ -526,12 +526,22 @@ fn tool_file_patch(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
         Some(result) => {
             fs::write(&target, &result.patched_content)
                 .with_context(|| format!("writing patched {path}"))?;
+            // Include the actual diff hunks so the TUI can render colored diffs
+            let mut output = format!(
+                "Patch applied to {path}: {} hunks, +{} -{} lines",
+                result.hunks_applied, result.lines_added, result.lines_removed
+            );
+            // Extract diff lines from the patch text for display
+            for line in patch_text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with('+') || trimmed.starts_with('-') || trimmed.starts_with("@@") {
+                    output.push('\n');
+                    output.push_str(trimmed);
+                }
+            }
             Ok(ToolOutput {
                 success: true,
-                content: format!(
-                    "Patch applied to {path}: {} hunks, +{} -{} lines",
-                    result.hunks_applied, result.lines_added, result.lines_removed
-                ),
+                content: output,
             })
         }
         None => Ok(ToolOutput {

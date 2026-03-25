@@ -99,7 +99,7 @@ function App() {
 
       <div className="main-area">
         <div className="tabs">
-          ${["overview", "graph", "code", "paper"].map((t) => h`
+          ${["overview", "graph", "code", "activity", "paper"].map((t) => h`
             <button key=${t}
               className=${`tab ${tab === t ? "tab-active" : ""}`}
               onClick=${() => setTab(t)}>
@@ -112,6 +112,7 @@ function App() {
             : tab === "overview" ? h`<${OverviewTab} session=${session} />`
             : tab === "graph" ? h`<${GraphTab} session=${session} />`
             : tab === "code" ? h`<${CodeTab} sessionId=${selectedId} />`
+            : tab === "activity" ? h`<${ActivityTab} session=${session} />`
             : h`<${PaperTab} sessionId=${selectedId} />`}
         </div>
       </div>
@@ -571,6 +572,59 @@ function highlightTokens(text) {
     if (part.startsWith("\x01ty\x02")) return h`<span key=${i} style=${{ color: "#22d3ee" }}>${part.slice(4, -5)}</span>`;
     return part;
   });
+}
+
+function ActivityTab({ session }) {
+  const proof = session?.proof;
+  const activityLog = proof?.activity_log || proof?.activityLog || [];
+  const goals = proof?.proof_goals || proof?.proofGoals || [];
+
+  return h`
+    <div style=${{ padding: 16, fontFamily: "monospace", fontSize: 12, maxHeight: "calc(100vh - 180px)", overflow: "auto" }}>
+      <h3 style=${{ color: "#e5e5e5", margin: "0 0 12px", fontSize: 14 }}>Live Activity</h3>
+      ${activityLog.length === 0 ? h`
+        <div style=${{ color: "#525252" }}>No activity yet. Start a proof to see events here.</div>
+      ` : h`
+        <div style=${{ display: "flex", flexDirection: "column", gap: 4 }}>
+          ${activityLog.slice().reverse().map((entry, i) => {
+            const kindColors = { tool: "#06b6d4", verify: "#22c55e", search: "#f59e0b", error: "#ef4444" };
+            const color = kindColors[entry.kind] || "#737373";
+            const time = entry.timestamp ? new Date(entry.timestamp).toLocaleTimeString() : "";
+            return h`
+              <div key=${i} style=${{ display: "flex", gap: 8, alignItems: "baseline" }}>
+                <span style=${{ color: "#525252", fontSize: 10, minWidth: 70 }}>${time}</span>
+                <span style=${{ color, fontSize: 10, fontWeight: 600, minWidth: 40 }}>${entry.kind}</span>
+                <span style=${{ color: "#a3a3a3" }}>${entry.message}</span>
+              </div>
+            `;
+          })}
+        </div>
+      `}
+      ${goals.length > 0 ? h`
+        <h3 style=${{ color: "#e5e5e5", margin: "16px 0 8px", fontSize: 14 }}>Proof Goals (${goals.length})</h3>
+        ${goals.map((g, i) => {
+          const statusColors = { open: "#f59e0b", in_progress: "#3b82f6", closed: "#22c55e", failed: "#ef4444" };
+          const color = statusColors[g.status] || "#737373";
+          const failCount = (g.failed_tactics || g.failedTactics || []).length;
+          return h`
+            <div key=${i} style=${{ padding: "6px 8px", margin: "4px 0", border: "1px solid #333", borderRadius: 4, borderLeftColor: color, borderLeftWidth: 3 }}>
+              <div style=${{ display: "flex", gap: 8, alignItems: "center" }}>
+                <span style=${{ color, fontWeight: 600, fontSize: 11 }}>${g.status}</span>
+                ${failCount > 0 ? h`<span style=${{ color: "#ef4444", fontSize: 10 }}>${failCount} failed tactics</span>` : null}
+                ${g.attempts > 0 ? h`<span style=${{ color: "#525252", fontSize: 10 }}>${g.attempts} attempts</span>` : null}
+              </div>
+              <div style=${{ color: "#a3a3a3", fontSize: 11, marginTop: 2 }}>
+                ${(g.goal_text || g.goalText || "").substring(0, 120)}
+              </div>
+              ${g.tactic_applied || g.tacticApplied ? h`
+                <div style=${{ color: "#22c55e", fontSize: 10, marginTop: 2 }}>via: ${g.tactic_applied || g.tacticApplied}</div>
+              ` : null}
+            </div>
+          `;
+        })}
+      ` : null}
+    </div>
+  `;
 }
 
 function CodeTab({ sessionId }) {

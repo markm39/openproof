@@ -378,7 +378,8 @@ pub fn transcript_entry_to_turn_message(
         MessageRole::User => "user",
         MessageRole::Assistant => "assistant",
         MessageRole::System => "system",
-        MessageRole::Notice | MessageRole::ToolCall | MessageRole::ToolResult => return None,
+        MessageRole::Notice | MessageRole::ToolCall | MessageRole::ToolResult
+        | MessageRole::Diff | MessageRole::Thought => return None,
     };
     Some(TurnMessage::chat(role, entry.content))
 }
