@@ -14,6 +14,7 @@ use anyhow::{bail, Result};
 
 use openproof_lean::goal_state::AttemptResult;
 use openproof_lean::lsp_mcp::LeanLspMcp;
+use openproof_lean::pantograph::Pantograph;
 
 use crate::cache::{hash_goals, TacticCache};
 use crate::config::{SearchResult, TacticSearchConfig};
@@ -231,5 +232,187 @@ pub fn best_first_search(
         })
     } else {
         Ok(SearchResult::Exhausted { expansions })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pantograph-native search (state-based, ~1000x faster)
+// ---------------------------------------------------------------------------
+
+/// A node in the Pantograph proof search tree.
+#[derive(Debug, Clone)]
+struct PantographNode {
+    /// Priority: fewer remaining goals = better.
+    score: usize,
+    /// Pantograph state reference (immutable snapshot of proof state).
+    state_id: u64,
+    /// Tactic sequence from root to this state.
+    tactics: Vec<String>,
+    /// Goal descriptions for LLM proposal and dedup.
+    goal_descriptions: Vec<String>,
+}
+
+impl PartialEq for PantographNode {
+    fn eq(&self, other: &Self) -> bool { self.score == other.score }
+}
+impl Eq for PantographNode {}
+impl PartialOrd for PantographNode {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+}
+impl Ord for PantographNode {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        Reverse(self.score).cmp(&Reverse(other.score))
+            .then_with(|| self.tactics.len().cmp(&other.tactics.len()))
+    }
+}
+
+/// Best-first search using Pantograph goal states (~3ms per tactic test).
+///
+/// Instead of recompiling files, this operates directly on Pantograph's
+/// proof state tree. Each tactic application returns a new state_id with
+/// updated goals, enabling real tree search over proof strategies.
+pub fn pantograph_best_first_search(
+    pantograph: &Mutex<Pantograph>,
+    propose_fn: &ProposeFn,
+    type_expr: &str,
+    retrieval_context: &str,
+    config: &TacticSearchConfig,
+) -> Result<SearchResult> {
+    let start = Instant::now();
+    let mut expansions: usize = 0;
+    let mut seen_states: HashSet<u64> = HashSet::new();
+    let mut frontier: BinaryHeap<PantographNode> = BinaryHeap::new();
+    let mut allocated_states: Vec<u64> = Vec::new();
+
+    // Start the proof goal
+    let initial_state_id = {
+        let mut pg = pantograph.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        if !pg.is_alive() {
+            bail!("Pantograph process is not running");
+        }
+        pg.start_goal(type_expr)?
+            .ok_or_else(|| anyhow::anyhow!("goal.start failed for: {}", &type_expr[..type_expr.len().min(100)]))?
+    };
+    allocated_states.push(initial_state_id);
+
+    let initial_hash = {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(&type_expr, &mut hasher);
+        std::hash::Hasher::finish(&hasher)
+    };
+    seen_states.insert(initial_hash);
+
+    frontier.push(PantographNode {
+        score: 1, // one goal to prove
+        state_id: initial_state_id,
+        tactics: vec![],
+        goal_descriptions: vec![type_expr.to_string()],
+    });
+
+    let mut best_partial = PantographNode {
+        score: usize::MAX,
+        state_id: initial_state_id,
+        tactics: vec![],
+        goal_descriptions: vec![type_expr.to_string()],
+    };
+
+    while let Some(node) = frontier.pop() {
+        if start.elapsed() > config.timeout {
+            cleanup_states(pantograph, &allocated_states);
+            return Ok(SearchResult::Timeout {
+                best_tactics: best_partial.tactics,
+                remaining_goals: best_partial.score,
+            });
+        }
+        if expansions >= config.max_expansions {
+            cleanup_states(pantograph, &allocated_states);
+            return Ok(SearchResult::Exhausted { expansions });
+        }
+        if node.tactics.len() >= config.max_depth {
+            continue; // prune deep branches
+        }
+        if node.score < best_partial.score {
+            best_partial = node.clone();
+        }
+
+        // Focus on the first goal description for tactic proposal
+        let goal_text = node.goal_descriptions.first().map(|s| s.as_str()).unwrap_or("");
+        if goal_text.is_empty() {
+            continue;
+        }
+
+        // Generate candidate tactics
+        let candidates = match propose_fn(goal_text, retrieval_context, config.beam_width) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+
+        // Test each candidate tactic via Pantograph (3ms each)
+        for tactic in &candidates {
+            let result = {
+                let mut pg = pantograph.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                if !pg.is_alive() {
+                    cleanup_states(pantograph, &allocated_states);
+                    bail!("Pantograph died during search");
+                }
+                pg.try_tactic(node.state_id, 0, tactic)?
+            };
+            expansions += 1;
+
+            if !result.error.is_none() || result.new_state_id.is_none() {
+                continue; // tactic failed
+            }
+
+            let new_state_id = result.new_state_id.unwrap();
+            allocated_states.push(new_state_id);
+
+            // Proof complete!
+            if result.remaining_goals.is_empty() {
+                let mut tactics = node.tactics.clone();
+                tactics.push(tactic.clone());
+                cleanup_states(pantograph, &allocated_states);
+                return Ok(SearchResult::Solved {
+                    tactics,
+                    file_content: String::new(),
+                });
+            }
+
+            // New state with reduced goals -- add to frontier
+            let goals_hash = hash_goals(&result.remaining_goals);
+            if config.dedup && !seen_states.insert(goals_hash) {
+                continue; // already explored this goal set
+            }
+
+            let mut new_tactics = node.tactics.clone();
+            new_tactics.push(tactic.clone());
+
+            frontier.push(PantographNode {
+                score: result.remaining_goals.len(),
+                state_id: new_state_id,
+                tactics: new_tactics,
+                goal_descriptions: result.remaining_goals,
+            });
+        }
+    }
+
+    cleanup_states(pantograph, &allocated_states);
+
+    if best_partial.score < usize::MAX && !best_partial.tactics.is_empty() {
+        Ok(SearchResult::Partial {
+            tactics: best_partial.tactics,
+            remaining_goals: best_partial.score,
+            file_content: String::new(),
+        })
+    } else {
+        Ok(SearchResult::Exhausted { expansions })
+    }
+}
+
+/// Delete all Pantograph goal states to free REPL memory.
+fn cleanup_states(pantograph: &Mutex<Pantograph>, states: &[u64]) {
+    if let Ok(mut pg) = pantograph.lock() {
+        for &sid in states {
+            let _ = pg.delete_goal(sid);
+        }
     }
 }

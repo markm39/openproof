@@ -575,6 +575,18 @@ fn write_temp_file(content: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
+/// Compile Lean content and return (ok, raw_output).
+/// Public so the tactic search can extract goal types from error output.
+pub fn run_lean_verify_raw(project_dir: &Path, content: &str) -> Result<(bool, String)> {
+    let full = if content.trim_start().starts_with("import ") {
+        content.to_string()
+    } else {
+        format!("import Mathlib\n\n{content}")
+    };
+    let scratch_path = write_temp_file(&full)?;
+    run_lean_command(project_dir, &scratch_path)
+}
+
 fn build_import_block(imports: &[String]) -> String {
     let list = if imports.is_empty() {
         vec!["Mathlib".to_string()]

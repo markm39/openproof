@@ -14,6 +14,8 @@ pub struct TacticSearchConfig {
     pub timeout: Duration,
     /// Whether to use the transposition table (dedup by goal hash).
     pub dedup: bool,
+    /// Maximum tactic sequence depth before pruning a branch.
+    pub max_depth: usize,
 }
 
 impl Default for TacticSearchConfig {
@@ -23,6 +25,7 @@ impl Default for TacticSearchConfig {
             max_expansions: 200,
             timeout: Duration::from_secs(120),
             dedup: true,
+            max_depth: 20,
         }
     }
 }

@@ -73,6 +73,9 @@ pub struct TacticTestResult {
     pub success: bool,
     pub remaining_goals: Vec<String>,
     pub error: Option<String>,
+    /// Pantograph state ID for the resulting proof state.
+    /// Use this to chain further tactics on the new state.
+    pub new_state_id: Option<u64>,
 }
 
 impl Pantograph {
@@ -240,6 +243,7 @@ impl Pantograph {
                 success: false,
                 remaining_goals: Vec::new(),
                 error: Some(err.to_string()),
+                new_state_id: None,
             });
         }
 
@@ -252,19 +256,22 @@ impl Pantograph {
                     success: false,
                     remaining_goals: Vec::new(),
                     error: Some(err_msgs.join("; ")),
+                    new_state_id: None,
                 });
             }
         }
 
+        let new_state_id = response.get("stateId").and_then(|v| v.as_u64());
         let goals: Vec<String> = response.get("goals")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|g| g.as_str().map(String::from)).collect())
             .unwrap_or_default();
 
         Ok(TacticTestResult {
-            success: goals.is_empty(), // No remaining goals = proof complete
+            success: goals.is_empty(),
             remaining_goals: goals,
             error: None,
+            new_state_id,
         })
     }
 

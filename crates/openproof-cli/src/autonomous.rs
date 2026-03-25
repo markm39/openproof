@@ -1041,102 +1041,161 @@ fn spawn_tactic_search_for_sorrys(
     let scratch_path = project_dir.join("Scratch.lean");
     let _ = std::fs::write(&scratch_path, &full_content);
 
-    // Spawn MCP client for the search tasks
-    let lsp_mcp = match LeanLspMcp::spawn(&project_dir) {
-        Ok(client) => Arc::new(Mutex::new(client)),
-        Err(e) => {
-            eprintln!("[tactic-search] Cannot spawn lean-lsp-mcp: {e}");
-            return;
-        }
+    // Standard tactics for the propose_fn callback
+    let standard_tactics: Vec<String> = vec![
+        "simp", "omega", "ring", "norm_num", "linarith", "aesop",
+        "decide", "trivial", "exact?", "apply?", "simp_all", "tauto",
+        "contradiction", "norm_cast", "positivity", "gcongr",
+        "polyrith", "field_simp", "push_cast", "ring_nf", "nlinarith",
+        "norm_num [*]", "simp [*]",
+    ].into_iter().map(String::from).collect();
+
+    // Try Pantograph first (1000x faster), fall back to LSP
+    let pantograph: Option<Arc<Mutex<openproof_lean::pantograph::Pantograph>>> =
+        openproof_lean::pantograph::Pantograph::spawn(&project_dir)
+            .map(|pg| Arc::new(Mutex::new(pg)))
+            .ok();
+
+    let lsp_mcp: Option<Arc<Mutex<LeanLspMcp>>> = if pantograph.is_none() {
+        LeanLspMcp::spawn(&project_dir)
+            .map(|client| Arc::new(Mutex::new(client)))
+            .ok()
+    } else {
+        None // don't spawn LSP if we have Pantograph
     };
+
+    if pantograph.is_none() && lsp_mcp.is_none() {
+        eprintln!("[tactic-search] Neither Pantograph nor lean-lsp-mcp available");
+        return;
+    }
 
     let config = TacticSearchConfig::default();
 
-    for (line, col) in sorry_positions {
+    // Extract goal types for each sorry position (one compile, shared across all sorrys)
+    let sorry_goals: Vec<(usize, String)> = if pantograph.is_some() {
+        // Use lean to extract goal types at each sorry position
+        let mut goals = Vec::new();
+        for &(line, _col) in &sorry_positions {
+            // Try to extract goal from Lean's error output
+            if let Ok((_, output)) = openproof_lean::tools::run_lean_verify_raw(&project_dir, &full_content) {
+                // Parse "unsolved goals" from output for this line
+                let goal = extract_goal_at_line(&output, line);
+                goals.push((line, goal));
+            } else {
+                goals.push((line, String::new()));
+            }
+        }
+        goals
+    } else {
+        sorry_positions.iter().map(|&(line, _)| (line, String::new())).collect()
+    };
+
+    for (line, goal_type) in &sorry_goals {
+        let line = *line;
         let tx = tx.clone();
         let node_id = node_id.clone();
-        let lsp = lsp_mcp.clone();
-        let scratch = scratch_path.clone();
         let config = config.clone();
+        let tactics = standard_tactics.clone();
 
-        tokio::task::spawn_blocking(move || {
-            eprintln!("[tactic-search] Searching at line {line}, col {col}");
+        let propose_fn: openproof_search::search::ProposeFn = Box::new(
+            move |_goal: &str, _context: &str, k: usize| {
+                let mut t = tactics.clone();
+                t.truncate(k);
+                Ok(t)
+            },
+        );
 
-            // Simple propose function: returns common automation tactics.
-            // In a full implementation this would call the LLM.
-            let propose_fn: openproof_search::search::ProposeFn = Box::new(
-                move |_goal: &str, _context: &str, k: usize| {
-                    // Standard Lean automation tactics that often close goals
-                    let mut tactics = vec![
-                        "simp".to_string(),
-                        "omega".to_string(),
-                        "ring".to_string(),
-                        "norm_num".to_string(),
-                        "linarith".to_string(),
-                        "aesop".to_string(),
-                        "decide".to_string(),
-                        "trivial".to_string(),
-                        "exact?".to_string(),
-                        "apply?".to_string(),
-                        "simp_all".to_string(),
-                        "tauto".to_string(),
-                        "contradiction".to_string(),
-                        "norm_cast".to_string(),
-                        "positivity".to_string(),
-                        "gcongr".to_string(),
-                        "polyrith".to_string(),
-                        "field_simp".to_string(),
-                        "push_cast".to_string(),
-                        "ring_nf".to_string(),
-                        "nlinarith".to_string(),
-                        "norm_num [*]".to_string(),
-                        "simp [*]".to_string(),
-                    ];
-                    tactics.truncate(k);
-                    Ok(tactics)
-                },
-            );
-
-            match best_first_search(
-                &lsp, &propose_fn, &scratch, line,
-                "", // retrieval context
-                &config,
-            ) {
-                Ok(result) => {
-                    let (solved, tactics) = match &result {
-                        openproof_search::config::SearchResult::Solved { tactics, .. } => {
-                            (true, tactics.clone())
-                        }
-                        openproof_search::config::SearchResult::Partial { tactics, .. } => {
-                            (false, tactics.clone())
-                        }
-                        _ => (false, vec![]),
-                    };
-                    let status = match &result {
-                        openproof_search::config::SearchResult::Solved { .. } => "SOLVED",
-                        openproof_search::config::SearchResult::Partial { .. } => "partial",
-                        openproof_search::config::SearchResult::Exhausted { .. } => "exhausted",
-                        openproof_search::config::SearchResult::Timeout { .. } => "timeout",
-                    };
-                    if tactics.is_empty() {
-                        eprintln!("[tactic-search] Line {line}: {status}");
-                    } else {
-                        eprintln!(
-                            "[tactic-search] Line {line}: {status} (tactics: {})",
-                            tactics.join("; ")
-                        );
+        // Prefer Pantograph path (3ms per tactic)
+        if let Some(ref pg) = pantograph {
+            if !goal_type.is_empty() {
+                let pg = pg.clone();
+                let goal_type = goal_type.clone();
+                tokio::task::spawn_blocking(move || {
+                    eprintln!("[tactic-search] Pantograph search at line {line}: {}", &goal_type[..goal_type.len().min(60)]);
+                    match openproof_search::search::pantograph_best_first_search(
+                        &pg, &propose_fn, &goal_type, "", &config,
+                    ) {
+                        Ok(result) => emit_search_result(&tx, &node_id, line, result),
+                        Err(e) => eprintln!("[tactic-search] Pantograph error at line {line}: {e}"),
                     }
-                    let _ = tx.send(AppEvent::TacticSearchComplete {
-                        node_id,
-                        sorry_line: line,
-                        solved,
-                        tactics,
-                    });
+                });
+                continue;
+            }
+        }
+
+        // Fallback: LSP-based search
+        if let Some(ref lsp) = lsp_mcp {
+            let lsp = lsp.clone();
+            let scratch = scratch_path.clone();
+            tokio::task::spawn_blocking(move || {
+                eprintln!("[tactic-search] LSP search at line {line}");
+                match best_first_search(
+                    &lsp, &propose_fn, &scratch, line, "", &config,
+                ) {
+                    Ok(result) => emit_search_result(&tx, &node_id, line, result),
+                    Err(e) => eprintln!("[tactic-search] LSP error at line {line}: {e}"),
                 }
-                Err(e) => {
-                    eprintln!("[tactic-search] Line {line} error: {e}");
+            });
+        }
+    }
+}
+
+fn emit_search_result(
+    tx: &mpsc::UnboundedSender<AppEvent>,
+    node_id: &str,
+    line: usize,
+    result: openproof_search::config::SearchResult,
+) {
+    let (solved, tactics) = match &result {
+        openproof_search::config::SearchResult::Solved { tactics, .. } => (true, tactics.clone()),
+        openproof_search::config::SearchResult::Partial { tactics, .. } => (false, tactics.clone()),
+        _ => (false, vec![]),
+    };
+    let status = match &result {
+        openproof_search::config::SearchResult::Solved { .. } => "SOLVED",
+        openproof_search::config::SearchResult::Partial { .. } => "partial",
+        openproof_search::config::SearchResult::Exhausted { .. } => "exhausted",
+        openproof_search::config::SearchResult::Timeout { .. } => "timeout",
+    };
+    eprintln!("[tactic-search] Line {line}: {status} (tactics: {})", tactics.join("; "));
+    let _ = tx.send(AppEvent::TacticSearchComplete {
+        node_id: node_id.to_string(),
+        sorry_line: line,
+        solved,
+        tactics,
+    });
+}
+
+/// Extract the goal type at a specific sorry line from Lean's error output.
+fn extract_goal_at_line(lean_output: &str, target_line: usize) -> String {
+    // Look for "unsolved goals" message near the target line
+    let mut capturing = false;
+    let mut goal_lines = Vec::new();
+
+    for line in lean_output.lines() {
+        // Match lines like "file.lean:15:2: error: unsolved goals"
+        if line.contains("unsolved goals") {
+            if let Some(line_num) = line.split(':').nth(1).and_then(|s| s.parse::<usize>().ok()) {
+                if (line_num as isize - target_line as isize).unsigned_abs() <= 3 {
+                    capturing = true;
+                    continue;
                 }
             }
-        });
+        }
+        if capturing {
+            let trimmed = line.trim();
+            // Stop at next diagnostic or empty section
+            if trimmed.is_empty() || (trimmed.contains(".lean:") && trimmed.contains("error")) {
+                break;
+            }
+            // Skip the "⊢" prefix line
+            if trimmed.starts_with("⊢") {
+                goal_lines.push(trimmed.trim_start_matches('⊢').trim().to_string());
+            } else if !goal_lines.is_empty() {
+                // Continuation of the goal type
+                goal_lines.push(trimmed.to_string());
+            }
+        }
     }
+    goal_lines.join(" ")
 }
