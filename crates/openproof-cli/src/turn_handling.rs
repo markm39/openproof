@@ -195,12 +195,14 @@ pub async fn run_agentic_loop(
                             }
                         }
 
-                        // Cloud semantic search
+                        // Cloud semantic search + edge expansion
                         let cloud_client = openproof_cloud::CloudCorpusClient::new(Default::default());
                         let _ = cloud_client.availability();
+                        let mut cloud_identity_keys: Vec<String> = Vec::new();
                         match cloud_client.search_semantic(&query, 10).await {
                             Ok(semantic_hits) => {
                                 for hit in &semantic_hits {
+                                    cloud_identity_keys.push(hit.identity_key.clone());
                                     let line = format!("- {} (sim:{:.2}) :: {}", hit.label, hit.score, hit.statement);
                                     if !results.iter().any(|r| r.contains(&hit.label)) {
                                         results.push(line);
@@ -209,6 +211,36 @@ pub async fn run_agentic_loop(
                             }
                             Err(e) => {
                                 eprintln!("[corpus] cloud semantic search error: {e}");
+                            }
+                        }
+
+                        // Cloud edge expansion: for top hits, find 1-hop neighbors
+                        for key in cloud_identity_keys.iter().take(3) {
+                            if let Ok(related) = cloud_client.get_related_items(key, 5).await {
+                                for item in &related {
+                                    if !results.iter().any(|r| r.contains(&item.label)) {
+                                        results.push(format!(
+                                            "- {} ({}) :: {}",
+                                            item.label, item.edge_type, item.statement
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+
+                        // Cloud failure search: surface known-bad approaches
+                        if let Ok(failures) = cloud_client.search_failures(&query, 5).await {
+                            if !failures.is_empty() {
+                                results.push(String::new());
+                                results.push("KNOWN FAILURES (do NOT repeat these approaches):".to_string());
+                                for f in &failures {
+                                    let class = f.get("failureClass").and_then(|v| v.as_str()).unwrap_or("");
+                                    let snippet = f.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+                                    let diag = f.get("diagnostic").and_then(|v| v.as_str()).unwrap_or("");
+                                    if !snippet.is_empty() || !diag.is_empty() {
+                                        results.push(format!("  [{class}] {} -> {}", &snippet[..snippet.len().min(120)], &diag[..diag.len().min(120)]));
+                                    }
+                                }
                             }
                         }
 
@@ -399,10 +431,37 @@ pub fn start_agent_branch_turn(
                                 }
                             }
                             let cloud = openproof_cloud::CloudCorpusClient::new(Default::default());
+                            let mut cloud_keys: Vec<String> = Vec::new();
                             if let Ok(hits) = cloud.search_semantic(&query, 10).await {
                                 for h in &hits {
+                                    cloud_keys.push(h.identity_key.clone());
                                     if !results.iter().any(|r| r.contains(&h.label)) {
                                         results.push(format!("- {} (sim:{:.2}) :: {}", h.label, h.score, h.statement));
+                                    }
+                                }
+                            }
+                            // Cloud edge expansion for top hits
+                            for key in cloud_keys.iter().take(3) {
+                                if let Ok(related) = cloud.get_related_items(key, 5).await {
+                                    for item in &related {
+                                        if !results.iter().any(|r| r.contains(&item.label)) {
+                                            results.push(format!("- {} ({}) :: {}", item.label, item.edge_type, item.statement));
+                                        }
+                                    }
+                                }
+                            }
+                            // Cloud failure search for branch context
+                            if let Ok(failures) = cloud.search_failures(&query, 5).await {
+                                if !failures.is_empty() {
+                                    results.push(String::new());
+                                    results.push("KNOWN FAILURES (do NOT repeat):".to_string());
+                                    for f in &failures {
+                                        let class = f.get("failureClass").and_then(|v| v.as_str()).unwrap_or("");
+                                        let snippet = f.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+                                        let diag = f.get("diagnostic").and_then(|v| v.as_str()).unwrap_or("");
+                                        if !snippet.is_empty() || !diag.is_empty() {
+                                            results.push(format!("  [{class}] {} -> {}", &snippet[..snippet.len().min(120)], &diag[..diag.len().min(120)]));
+                                        }
                                     }
                                 }
                             }

@@ -423,6 +423,60 @@ impl CloudCorpusClient {
             .unwrap_or_default())
     }
 
+    /// Query related items via cloud corpus_edges (1-hop graph expansion).
+    pub async fn get_related_items(
+        &self,
+        identity_key: &str,
+        limit: usize,
+    ) -> Result<Vec<RelatedItem>> {
+        let base_url = match self.base_url() {
+            Some(url) => url,
+            None => return Ok(Vec::new()),
+        };
+        let response = match self
+            .client
+            .get(format!("{base_url}/api/v1/edges/related"))
+            .query(&[
+                ("identity_key", identity_key),
+                ("limit", &limit.to_string()),
+            ])
+            .send()
+            .await
+        {
+            Ok(resp) => resp,
+            Err(_) => return Ok(Vec::new()),
+        };
+        if !response.status().is_success() {
+            return Ok(Vec::new());
+        }
+        let payload: serde_json::Value = response.json().await.context("parsing related items")?;
+        let items = payload
+            .get("items")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|h| {
+                        Some(RelatedItem {
+                            identity_key: h.get("identityKey")?.as_str()?.to_string(),
+                            label: h.get("label")?.as_str()?.to_string(),
+                            statement: h
+                                .get("statement")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                            edge_type: h
+                                .get("edgeType")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(items)
+    }
+
     /// Upload corpus edges to cloud.
     pub async fn upload_corpus_edges(
         &self,
@@ -450,4 +504,13 @@ pub struct SemanticSearchHit {
     pub label: String,
     pub statement: String,
     pub score: f32,
+}
+
+/// A related item from cloud corpus edge expansion.
+#[derive(Debug, Clone)]
+pub struct RelatedItem {
+    pub identity_key: String,
+    pub label: String,
+    pub statement: String,
+    pub edge_type: String,
 }

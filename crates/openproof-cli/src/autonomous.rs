@@ -1096,12 +1096,26 @@ fn spawn_tactic_search_for_sorrys(
         let node_id = node_id.clone();
         let config = config.clone();
         let tactics = standard_tactics.clone();
+        let store_for_propose = store.clone();
 
         let propose_fn: openproof_search::search::ProposeFn = Box::new(
-            move |_goal: &str, _context: &str, k: usize| {
-                let mut t = tactics.clone();
-                t.truncate(k);
-                Ok(t)
+            move |goal: &str, _context: &str, k: usize| {
+                // Generate premise-based tactics from corpus search on the goal text
+                let mut candidates: Vec<String> = Vec::new();
+                if !goal.is_empty() {
+                    if let Ok(hits) = store_for_propose.search_verified_corpus(goal, 8) {
+                        for (label, _statement, _vis) in &hits {
+                            // Generate premise-specific tactics
+                            candidates.push(format!("exact {label}"));
+                            candidates.push(format!("apply {label}"));
+                            candidates.push(format!("rw [{label}]"));
+                        }
+                    }
+                }
+                // Append standard automation tactics after premise-based ones
+                candidates.extend(tactics.clone());
+                candidates.truncate(k);
+                Ok(candidates)
             },
         );
 
