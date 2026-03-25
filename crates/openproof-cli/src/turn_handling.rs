@@ -74,8 +74,16 @@ pub async fn run_agentic_loop(
     let mut messages = initial_messages;
     let project_dir = resolve_lean_project_dir();
     let workspace_dir = store.workspace_dir(session_id);
-    // Ensure workspace directory exists.
+    // Ensure workspace directory exists and has Lean project symlinks
+    // so lean-lsp-mcp can recognize it as a Lean project.
     let _ = std::fs::create_dir_all(&workspace_dir);
+    // Symlink lean-toolchain so lean-lsp-mcp recognizes the workspace as a Lean project.
+    // Don't symlink .lake (too large) or lakefile.toml (confuses lake).
+    let toolchain_target = workspace_dir.join("lean-toolchain");
+    let toolchain_source = project_dir.join("lean-toolchain");
+    if !toolchain_target.exists() && toolchain_source.exists() {
+        let _ = std::os::unix::fs::symlink(&toolchain_source, &toolchain_target);
+    }
     let mut turn_used_tools = false;
     let mut last_verify_ok = false;
 
