@@ -50,11 +50,31 @@ ollama pull hf.co/zeyu-zheng/BFS-Prover-V2-7B-GGUF:Q8_0
 
 ### Install
 
+**npm** (easiest, no Rust toolchain needed):
+
+```bash
+npm install -g openproof
+```
+
+**Homebrew** (macOS / Linux):
+
+```bash
+brew tap markm39/tap && brew install openproof
+```
+
+**Shell installer**:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/markm39/openproof/master/scripts/install.sh | sh
+```
+
+**Cargo** (from source):
+
 ```bash
 cargo install --path crates/openproof-cli
 ```
 
-Or build from source:
+**Build from source**:
 
 ```bash
 git clone https://github.com/markm39/openproof.git

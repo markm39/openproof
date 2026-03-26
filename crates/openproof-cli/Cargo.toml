@@ -3,6 +3,14 @@ name = "openproof-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Conversational theorem prover for Lean 4"
+repository = "https://github.com/markm39/openproof"
+keywords = ["lean", "theorem-prover", "formal-verification"]
+categories = ["command-line-utilities", "mathematics"]
+
+[[bin]]
+name = "openproof"
+path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true

@@ -1,0 +1,199 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            os: macos-14
+            use_cross: false
+          - target: x86_64-apple-darwin
+            os: macos-13
+            use_cross: false
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: false
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            use_cross: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build release binary
+        env:
+          TARGET: ${{ matrix.target }}
+          USE_CROSS: ${{ matrix.use_cross }}
+        run: |
+          if [ "$USE_CROSS" = "true" ]; then
+            cross build --release --target "$TARGET" -p openproof-cli
+          else
+            cargo build --release --target "$TARGET" -p openproof-cli
+          fi
+
+      - name: Package tarball
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          DIR="openproof-v${VERSION}-${TARGET}"
+          mkdir "$DIR"
+          cp "target/${TARGET}/release/openproof" "$DIR/"
+          cp LICENSE README.md "$DIR/" 2>/dev/null || true
+          tar czf "${DIR}.tar.gz" "$DIR"
+          shasum -a 256 "${DIR}.tar.gz" > "${DIR}.tar.gz.sha256"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openproof-${{ matrix.target }}
+          path: |
+            openproof-v*.tar.gz
+            openproof-v*.tar.gz.sha256
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS
+        run: |
+          cd artifacts
+          cat *.sha256 > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/*.tar.gz
+            artifacts/SHA256SUMS.txt
+
+  publish-npm:
+    name: Publish to npm
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ vars.PUBLISH_NPM == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish npm packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: bash scripts/publish-npm.sh "${VERSION#v}" artifacts
+
+  update-homebrew:
+    name: Update Homebrew tap
+    needs: release
+    runs-on: ubuntu-latest
+    if: ${{ vars.PUBLISH_HOMEBREW == 'true' }}
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Compute checksums and update tap
+        env:
+          TAG: ${{ github.ref_name }}
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${TAG#v}"
+          SHA_DARWIN_ARM64=$(sha256sum artifacts/openproof-v*-aarch64-apple-darwin.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_X64=$(sha256sum artifacts/openproof-v*-x86_64-apple-darwin.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_X64=$(sha256sum artifacts/openproof-v*-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_ARM64=$(sha256sum artifacts/openproof-v*-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/markm39/homebrew-tap.git" tap
+          cd tap
+
+          cat > Formula/openproof.rb << FORMULA
+          class Openproof < Formula
+            desc "Conversational theorem prover for Lean 4"
+            homepage "https://github.com/markm39/openproof"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-aarch64-apple-darwin.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-x86_64-apple-darwin.tar.gz"
+                sha256 "${SHA_DARWIN_X64}"
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+              on_intel do
+                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+                sha256 "${SHA_LINUX_X64}"
+              end
+            end
+
+            def install
+              bin.install "openproof"
+            end
+
+            test do
+              assert_match "openproof", shell_output("#{bin}/openproof --help", 1)
+            end
+          end
+          FORMULA
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/openproof.rb
+          git commit -m "Update openproof to ${VERSION}"
+          git push

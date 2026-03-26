@@ -1,0 +1,33 @@
+{
+  "name": "openproof",
+  "version": "0.1.0",
+  "description": "Conversational theorem prover for Lean 4",
+  "bin": {
+    "openproof": "bin/openproof"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "optionalDependencies": {
+    "@openproof/cli-darwin-arm64": "0.1.0",
+    "@openproof/cli-darwin-x64": "0.1.0",
+    "@openproof/cli-linux-x64": "0.1.0",
+    "@openproof/cli-linux-arm64": "0.1.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/markm39/openproof.git"
+  },
+  "keywords": [
+    "lean",
+    "lean4",
+    "theorem-prover",
+    "formal-verification",
+    "math",
+    "proof-assistant"
+  ],
+  "engines": {
+    "node": ">=16"
+  }
+}

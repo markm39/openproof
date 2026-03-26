@@ -1,6 +1,7 @@
 node_modules/
 .DS_Store
 dist/
+npm/cli-*/bin/openproof
 lean/.lake/
 lean/build/
 *.log
