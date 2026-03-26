@@ -184,12 +184,14 @@ pub async fn run_agentic_loop(
                         let mut has_verified_proof = false;
                         if let Ok(local_hits) = store.search_verified_corpus(&query, 10) {
                             for (label, statement, _vis) in &local_hits {
-                                if let Ok(Some(_proof_code)) = store.get_artifact_content(label) {
+                                if let Ok(Some(proof_code)) = store.get_artifact_content(label) {
                                     has_verified_proof = true;
-                                    // Corpus proofs are available via `import OpenProof.Corpus`
-                                    // (compiled Lean module synced from cloud on startup).
+                                    // Show both: the quick `exact` option AND the full proof code.
+                                    // The model can `exact <name>` (auto-imported via OpenProof.Corpus)
+                                    // or copy the full proof into the workspace if the user wants it expanded.
+                                    let code_preview = if proof_code.len() > 2000 { &proof_code[..2000] } else { &proof_code };
                                     results.push(format!(
-                                        "*** VERIFIED PROOF (auto-imported) -- use `exact {label}` directly: ***\n- {label} :: {statement}"
+                                        "*** VERIFIED PROOF (auto-imported) -- use `exact {label}` OR copy the full proof: ***\n- {label} :: {statement}\n```lean\n{code_preview}\n```"
                                     ));
                                 } else {
                                     results.push(format!("- {label} :: {statement}"));
