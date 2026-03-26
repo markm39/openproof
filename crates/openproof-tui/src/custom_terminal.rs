@@ -137,11 +137,60 @@ impl<B: Backend + Write> CustomTerminal<B> {
     }
 
     pub fn flush(&mut self) -> io::Result<()> {
-        let updates = diff_buffers(self.previous_buffer(), self.current_buffer());
-        if let Some(&DrawCommand::Put { x, y, .. }) = updates.iter().rfind(|c| c.is_put()) {
+        // Full redraw every frame. The diff-based renderer causes garbled output
+        // when content shifts (spinner animation, tool results, etc.).
+        // Full redraw is ~1ms on modern terminals -- no visible performance cost.
+        let buf = self.current_buffer();
+        let area = buf.area;
+        let content = &buf.content;
+        let mut commands = Vec::new();
+
+        for y in 0..area.height {
+            let row_start = y as usize * area.width as usize;
+            let row_end = row_start + area.width as usize;
+            let row = &content[row_start..row_end];
+            let bg = row.last().map(|cell| cell.bg).unwrap_or(Color::Reset);
+
+            // Find last non-blank column
+            let mut last_nonblank = 0usize;
+            let mut col = 0usize;
+            while col < row.len() {
+                let cell = &row[col];
+                let w = display_width(cell.symbol());
+                if cell.symbol() != " " || cell.bg != bg || cell.modifier != Modifier::empty() {
+                    last_nonblank = col + w.saturating_sub(1);
+                }
+                col += w.max(1);
+            }
+
+            // Emit cells up to last non-blank
+            col = 0;
+            while col <= last_nonblank && col < row.len() {
+                let cell = &row[col];
+                if !cell.skip {
+                    commands.push(DrawCommand::Put {
+                        x: col as u16,
+                        y,
+                        cell: cell.clone(),
+                    });
+                }
+                col += display_width(cell.symbol()).max(1);
+            }
+
+            // Clear rest of line
+            if last_nonblank + 1 < area.width as usize {
+                commands.push(DrawCommand::ClearToEnd {
+                    x: (last_nonblank + 1) as u16,
+                    y,
+                    bg,
+                });
+            }
+        }
+
+        if let Some(&DrawCommand::Put { x, y, .. }) = commands.iter().rfind(|c| c.is_put()) {
             self.last_known_cursor_pos = Position { x, y };
         }
-        draw(&mut self.backend, updates.into_iter())
+        draw(&mut self.backend, commands.into_iter())
     }
 
     pub fn resize(&mut self, screen_size: Size) -> io::Result<()> {
