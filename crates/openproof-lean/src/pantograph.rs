@@ -261,7 +261,10 @@ impl Pantograph {
             }
         }
 
-        let new_state_id = response.get("stateId").and_then(|v| v.as_u64());
+        let new_state_id = response
+            .get("nextStateId")
+            .or_else(|| response.get("stateId"))
+            .and_then(|v| v.as_u64());
         let goals: Vec<String> = response.get("goals")
             .and_then(|v| v.as_array())
             .map(|arr| arr.iter().filter_map(|g| g.as_str().map(String::from)).collect())

@@ -10,9 +10,10 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use openproof_lean::lsp_mcp::LeanLspMcp;
+use openproof_lean::pantograph::Pantograph;
 use openproof_lean::tools::{find_sorry_positions, run_lean_verify_raw};
 use openproof_search::config::{SearchResult, TacticSearchConfig};
-use openproof_search::search::{best_first_search, ProposeFn};
+use openproof_search::search::{best_first_search, pantograph_best_first_search, ProposeFn};
 
 fn lean_project_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -354,4 +355,87 @@ theorem test_penalty (n : Nat) : 0 + n = n := by
         assert!(tactics.len() <= 2, "High penalty should produce short proof, got {} steps", tactics.len());
     }
     assert!(result.is_solved(), "Expected Solved even with high length penalty");
+}
+
+// -----------------------------------------------------------------------
+// Pantograph-based tests (~1000x faster per tactic, but 18s startup)
+// -----------------------------------------------------------------------
+
+fn spawn_pantograph() -> Mutex<Pantograph> {
+    let project_dir = lean_project_dir();
+    println!("Spawning Pantograph (expect ~18s for Mathlib load)...");
+    let start = Instant::now();
+    let pg = Pantograph::spawn(&project_dir).expect("Failed to spawn Pantograph");
+    println!("Pantograph ready in {:.1}s", start.elapsed().as_secs_f64());
+    Mutex::new(pg)
+}
+
+#[test]
+#[ignore]
+fn pantograph_solves_simp_goal() {
+    let pg = spawn_pantograph();
+    let propose_fn = make_propose_fn(standard_tactics());
+    let config = default_config();
+
+    let goal = "forall (n : Nat), n + 0 = n";
+    println!("Goal: {goal}");
+    let start = Instant::now();
+    let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config)
+        .expect("search failed");
+    println!("Completed in {:.3}s", start.elapsed().as_secs_f64());
+    print_result(&result);
+    assert!(result.is_solved());
+}
+
+#[test]
+#[ignore]
+fn pantograph_solves_with_grind() {
+    let pg = spawn_pantograph();
+    let propose_fn: ProposeFn = Box::new(|_goal: &str, _ctx: &str, k: usize| {
+        Ok(vec!["grind".to_string()].into_iter().take(k).collect())
+    });
+    let config = default_config();
+
+    let goal = "forall (a b c : Nat), a = b -> b = c -> a = c";
+    println!("Goal (grind-only): {goal}");
+    let start = Instant::now();
+    let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config)
+        .expect("search failed");
+    println!("Completed in {:.3}s", start.elapsed().as_secs_f64());
+    print_result(&result);
+    assert!(result.is_solved(), "grind should solve transitivity");
+}
+
+#[test]
+#[ignore]
+fn pantograph_solves_multi_goals() {
+    let pg = spawn_pantograph();
+    let propose_fn = make_propose_fn(standard_tactics());
+    let config = default_config();
+
+    let goals = vec![
+        ("forall (n : Nat), 0 + n = n", "0+n=n"),
+        ("forall (a b : Nat), a + b = b + a", "add_comm"),
+        ("forall (n : Nat), n * 1 = n", "mul_one"),
+        ("forall (x : Int), (x + 1) * (x + 1) = x * x + 2 * x + 1", "ring_id"),
+        ("forall (n : Nat), n < n + 1", "lt_succ"),
+    ];
+
+    let mut solved = 0;
+    for (goal, label) in &goals {
+        print!("  {label}: ");
+        let start = Instant::now();
+        let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config)
+            .expect("search failed");
+        let elapsed = start.elapsed();
+        match &result {
+            SearchResult::Solved { tactics, .. } => {
+                println!("SOLVED in {:.3}s with {:?}", elapsed.as_secs_f64(), tactics);
+                solved += 1;
+            }
+            other => println!("FAILED in {:.3}s: {:?}", elapsed.as_secs_f64(), other),
+        }
+    }
+    println!("\nResults: {}/{} goals solved", solved, goals.len());
+    assert_eq!(solved, goals.len(), "Expected all goals solved");
 }
