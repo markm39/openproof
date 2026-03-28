@@ -186,6 +186,9 @@ pub struct AppState {
     pub history_index: Option<usize>,
     /// Draft input saved when entering history browse mode.
     pub input_draft: String,
+    /// Content of collapsed paste blocks. The Nth `\u{FFFC}` in `composer`
+    /// corresponds to `paste_blocks[N]`.
+    pub paste_blocks: Vec<String>,
     /// Whether the tool loop is currently active (executing tool calls).
     pub tool_loop_active: bool,
     /// Current iteration in the tool loop.
@@ -243,6 +246,7 @@ impl AppState {
             input_history: Vec::new(),
             history_index: None,
             input_draft: String::new(),
+            paste_blocks: Vec::new(),
             tool_loop_active: false,
             tool_loop_iteration: 0,
             current_tool_name: None,

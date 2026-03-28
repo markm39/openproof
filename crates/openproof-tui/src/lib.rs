@@ -213,7 +213,7 @@ pub fn draw(frame: &mut custom_terminal::Frame<'_>, state: &mut AppState) {
     let area = frame.area();
 
     let prefix_len = 2; // "> "
-    let input_height = compute_input_height(&state.composer, prefix_len, area.width);
+    let input_height = compute_input_height(&state.composer, prefix_len, area.width, &state.paste_blocks);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -517,26 +517,48 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
 // ---------------------------------------------------------------------------
 
 fn draw_input_area(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: Rect) {
-    let mut spans = vec![Span::styled(
+    let prefix = Span::styled(
         "> ".to_string(),
         Style::default()
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
-    )];
+    );
 
-    spans.extend(build_cursor_spans(&state.composer, state.composer_cursor));
+    let raw_lines = build_input_lines(
+        &state.composer,
+        state.composer_cursor,
+        &state.paste_blocks,
+    );
+
+    // Prepend the "> " prefix to the first line.
+    let mut lines: Vec<Line<'static>> = Vec::with_capacity(raw_lines.len());
+    for (i, line) in raw_lines.into_iter().enumerate() {
+        if i == 0 {
+            let mut spans = vec![prefix.clone()];
+            spans.extend(line.spans);
+            lines.push(Line::from(spans));
+        } else {
+            lines.push(line);
+        }
+    }
 
     let prefix_len = 2;
     let usable_width = area.width as usize;
     let visible_rows = area.height.saturating_sub(1) as usize;
-    let cursor_row = cursor_visual_row(&state.composer, state.composer_cursor, prefix_len, usable_width);
+    let cursor_row = cursor_visual_row(
+        &state.composer,
+        state.composer_cursor,
+        prefix_len,
+        usable_width,
+        &state.paste_blocks,
+    );
     let scroll_offset = if visible_rows > 0 && cursor_row >= visible_rows {
         (cursor_row - visible_rows + 1) as u16
     } else {
         0
     };
 
-    let input_para = Paragraph::new(Line::from(spans))
+    let input_para = Paragraph::new(Text::from(lines))
         .wrap(Wrap { trim: false })
         .scroll((scroll_offset, 0))
         .block(
@@ -614,7 +636,7 @@ fn draw_command_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: 
             .fg(Color::Cyan)
             .add_modifier(Modifier::BOLD),
     )];
-    spans.extend(build_cursor_spans(
+    spans.extend(build_plain_cursor_spans(
         &state.command_buffer,
         state.command_cursor,
     ));
@@ -840,67 +862,215 @@ fn draw_focus_picker(
 // Cursor rendering
 // ---------------------------------------------------------------------------
 
-/// Build spans for text with a visible block cursor at the given byte position.
-fn build_cursor_spans(text: &str, cursor: usize) -> Vec<Span<'static>> {
+/// Build spans for plain text with a visible block cursor (no paste block
+/// support). Used for the command bar.
+fn build_plain_cursor_spans(text: &str, cursor: usize) -> Vec<Span<'static>> {
+    let cursor_style = Style::default().fg(Color::Black).bg(Color::White);
     let mut spans = Vec::new();
 
     if text.is_empty() {
-        spans.push(Span::styled(
-            " ".to_string(),
-            Style::default().fg(Color::Black).bg(Color::White),
-        ));
+        spans.push(Span::styled(" ".to_string(), cursor_style));
         return spans;
     }
 
     let (before, rest) = text.split_at(cursor.min(text.len()));
-
     if !before.is_empty() {
         spans.push(Span::raw(before.to_string()));
     }
-
     if rest.is_empty() {
-        spans.push(Span::styled(
-            " ".to_string(),
-            Style::default().fg(Color::Black).bg(Color::White),
-        ));
+        spans.push(Span::styled(" ".to_string(), cursor_style));
     } else {
         let mut chars = rest.chars();
         let cursor_char = chars.next().unwrap();
-        spans.push(Span::styled(
-            cursor_char.to_string(),
-            Style::default().fg(Color::Black).bg(Color::White),
-        ));
+        spans.push(Span::styled(cursor_char.to_string(), cursor_style));
         let after: String = chars.collect();
         if !after.is_empty() {
             spans.push(Span::raw(after));
         }
     }
-
     spans
 }
 
-/// Compute the height needed for the input area, accounting for text wrapping.
-fn compute_input_height(text: &str, prefix_len: usize, area_width: u16) -> u16 {
+/// Paste block marker character.
+const PASTE_MARKER: char = '\u{FFFC}';
+
+/// Style for paste block labels.
+fn paste_label_style() -> Style {
+    Style::default()
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::ITALIC)
+}
+
+/// Build a display label for a paste block, e.g. "[Pasted text #1 +15 lines]".
+fn paste_label(block_idx: usize, paste_blocks: &[String]) -> String {
+    let line_count = paste_blocks
+        .get(block_idx)
+        .map(|b| b.lines().count())
+        .unwrap_or(0);
+    format!("[Pasted text #{} +{} lines]", block_idx + 1, line_count)
+}
+
+/// Build `Line` objects for the composer, handling newlines, paste block
+/// markers, and cursor rendering. Each `\n` becomes a line break.
+fn build_input_lines(
+    text: &str,
+    cursor: usize,
+    paste_blocks: &[String],
+) -> Vec<Line<'static>> {
+    let cursor_style = Style::default().fg(Color::Black).bg(Color::White);
+
+    if text.is_empty() {
+        return vec![Line::from(Span::styled(" ".to_string(), cursor_style))];
+    }
+
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut current_spans: Vec<Span<'static>> = Vec::new();
+    let mut buf = String::new();
+    let mut block_idx = 0usize;
+    let cursor = cursor.min(text.len());
+
+    for (byte_pos, ch) in text.char_indices() {
+        let at_cursor = byte_pos == cursor;
+
+        if ch == '\n' {
+            // Flush buffer before the newline.
+            if at_cursor {
+                if !buf.is_empty() {
+                    current_spans.push(Span::raw(buf.clone()));
+                    buf.clear();
+                }
+                current_spans.push(Span::styled(" ".to_string(), cursor_style));
+            } else if !buf.is_empty() {
+                current_spans.push(Span::raw(buf.clone()));
+                buf.clear();
+            }
+            lines.push(Line::from(std::mem::take(&mut current_spans)));
+        } else if ch == PASTE_MARKER {
+            // Flush buffer before the marker.
+            if !buf.is_empty() {
+                current_spans.push(Span::raw(buf.clone()));
+                buf.clear();
+            }
+            let label = paste_label(block_idx, paste_blocks);
+            if at_cursor {
+                // Cursor on the paste marker: highlight first char of label.
+                let mut label_chars = label.chars();
+                let first = label_chars.next().unwrap_or(' ');
+                current_spans.push(Span::styled(
+                    first.to_string(),
+                    cursor_style,
+                ));
+                let rest: String = label_chars.collect();
+                if !rest.is_empty() {
+                    current_spans.push(Span::styled(rest, paste_label_style()));
+                }
+            } else {
+                current_spans.push(Span::styled(label, paste_label_style()));
+            }
+            block_idx += 1;
+        } else {
+            if at_cursor {
+                // Flush buffer, then emit cursor char.
+                if !buf.is_empty() {
+                    current_spans.push(Span::raw(buf.clone()));
+                    buf.clear();
+                }
+                current_spans.push(Span::styled(ch.to_string(), cursor_style));
+            } else {
+                buf.push(ch);
+            }
+        }
+    }
+
+    // Flush remaining buffer.
+    if !buf.is_empty() {
+        current_spans.push(Span::raw(buf));
+    }
+
+    // If cursor is at end of text, add block cursor.
+    if cursor >= text.len() {
+        current_spans.push(Span::styled(" ".to_string(), cursor_style));
+    }
+
+    lines.push(Line::from(current_spans));
+    lines
+}
+
+/// Compute the height needed for the input area, accounting for text wrapping,
+/// newlines, and paste block display labels.
+fn compute_input_height(text: &str, prefix_len: usize, area_width: u16, paste_blocks: &[String]) -> u16 {
     let usable = area_width as usize;
     if usable == 0 {
         return 3;
     }
-    let char_count = prefix_len + text.chars().count();
-    let visual_lines = if char_count == 0 {
-        1
-    } else {
-        char_count.div_ceil(usable)
-    };
+    let mut visual_lines = 0usize;
+    let mut col = prefix_len;
+    let mut block_idx = 0usize;
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            visual_lines += 1;
+            col = 0;
+        } else if ch == PASTE_MARKER {
+            let label_len = paste_label(block_idx, paste_blocks).chars().count();
+            col += label_len;
+            while col >= usable {
+                visual_lines += 1;
+                col -= usable;
+            }
+            block_idx += 1;
+        } else {
+            col += 1;
+            if col >= usable {
+                visual_lines += 1;
+                col = 0;
+            }
+        }
+    }
+    visual_lines += 1;
     (visual_lines as u16 + 2).clamp(3, 10)
 }
 
-/// Determine which visual row the cursor occupies when the input wraps.
-fn cursor_visual_row(text: &str, cursor: usize, prefix_len: usize, width: usize) -> usize {
+/// Determine which visual row the cursor occupies, accounting for newlines,
+/// paste block labels, and wrapping.
+fn cursor_visual_row(
+    text: &str,
+    cursor: usize,
+    prefix_len: usize,
+    width: usize,
+    paste_blocks: &[String],
+) -> usize {
     if width == 0 {
         return 0;
     }
-    let chars_before = text[..cursor.min(text.len())].chars().count();
-    (prefix_len + chars_before) / width
+    let mut row = 0usize;
+    let mut col = prefix_len;
+    let mut block_idx = 0usize;
+
+    for (byte_pos, ch) in text.char_indices() {
+        if byte_pos >= cursor {
+            break;
+        }
+        if ch == '\n' {
+            row += 1;
+            col = 0;
+        } else if ch == PASTE_MARKER {
+            let label_len = paste_label(block_idx, paste_blocks).chars().count();
+            col += label_len;
+            while col >= width {
+                row += 1;
+                col -= width;
+            }
+            block_idx += 1;
+        } else {
+            col += 1;
+            if col >= width {
+                row += 1;
+                col = 0;
+            }
+        }
+    }
+    row
 }
 
 // ---------------------------------------------------------------------------

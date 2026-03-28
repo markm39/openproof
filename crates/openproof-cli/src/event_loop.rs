@@ -456,6 +456,7 @@ fn handle_normal_mode_key(
             if !state.composer.is_empty() {
                 state.composer.clear();
                 state.composer_cursor = 0;
+                state.paste_blocks.clear();
                 None
             } else {
                 Some(AppEvent::Quit)
@@ -497,6 +498,7 @@ fn handle_normal_mode_key(
             // Clear composer.
             state.composer.clear();
             state.composer_cursor = 0;
+            state.paste_blocks.clear();
             state.history_index = None;
             state.input_draft.clear();
             None
@@ -504,41 +506,20 @@ fn handle_normal_mode_key(
         KeyCode::Up if state.has_open_question() => Some(AppEvent::SelectPrevQuestionOption),
         KeyCode::Down if state.has_open_question() => Some(AppEvent::SelectNextQuestionOption),
         KeyCode::Up => {
-            if !state.input_history.is_empty() {
-                // Browse input history backward (shell-style).
-                if state.history_index.is_none() {
-                    state.input_draft = state.composer.clone();
-                }
-                let idx = match state.history_index {
-                    Some(0) => 0,
-                    Some(i) => i - 1,
-                    None => state.input_history.len() - 1,
-                };
-                state.history_index = Some(idx);
-                state.composer = state.input_history[idx].clone();
-                state.composer_cursor = state.composer.len();
+            // If composer has multiple lines, try navigating up first.
+            if cursor_up_in_composer(state) {
                 None
             } else {
-                Some(AppEvent::ScrollTranscriptUp)
+                browse_history_backward(state);
+                None
             }
         }
         KeyCode::Down => {
-            if state.history_index.is_some() {
-                // Browse input history forward.
-                match state.history_index {
-                    Some(i) if i + 1 < state.input_history.len() => {
-                        state.history_index = Some(i + 1);
-                        state.composer = state.input_history[i + 1].clone();
-                        state.composer_cursor = state.composer.len();
-                    }
-                    Some(_) => {
-                        state.history_index = None;
-                        state.composer = state.input_draft.clone();
-                        state.composer_cursor = state.composer.len();
-                        state.input_draft.clear();
-                    }
-                    None => {}
-                }
+            // If composer has multiple lines, try navigating down first.
+            if cursor_down_in_composer(state) {
+                None
+            } else if state.history_index.is_some() {
+                browse_history_forward(state);
                 None
             } else {
                 Some(AppEvent::ScrollTranscriptDown)
@@ -575,6 +556,9 @@ fn handle_normal_mode_key(
             state.completion_idx = None;
             None
         }
+        KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
+            Some(AppEvent::InputChar('\n'))
+        }
         KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
             Some(AppEvent::InputChar(ch))
         }
@@ -585,7 +569,7 @@ fn handle_normal_mode_key(
         if let Some(write) = state.apply(next_event) {
             persist_write(tx.clone(), store.clone(), write);
         }
-    } else if matches!(key.code, KeyCode::Enter) {
+    } else if matches!(key.code, KeyCode::Enter) && !key.modifiers.contains(KeyModifiers::SHIFT) {
         if state.has_open_question() && state.composer.trim().is_empty() {
             submit_selected_question_option(tx.clone(), store.clone(), state);
         } else if let Some(submission) = state.submit_composer() {
@@ -599,4 +583,88 @@ fn handle_normal_mode_key(
             handle_submission(tx.clone(), store.clone(), state, submission, prover.clone());
         }
     }
+}
+
+/// Move cursor up one line within the composer. Returns `true` if the
+/// cursor moved (i.e. it was not on the first line).
+fn cursor_up_in_composer(state: &mut AppState) -> bool {
+    let before = &state.composer[..state.composer_cursor];
+    let Some(prev_nl) = before.rfind('\n') else {
+        return false; // already on first line
+    };
+    let col = before[prev_nl + 1..].chars().count();
+    let prev_line_start = before[..prev_nl].rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let prev_line = &state.composer[prev_line_start..prev_nl];
+    let target_col = col.min(prev_line.chars().count());
+    state.composer_cursor = prev_line_start
+        + prev_line
+            .char_indices()
+            .nth(target_col)
+            .map(|(i, _)| i)
+            .unwrap_or(prev_line.len());
+    true
+}
+
+/// Move cursor down one line within the composer. Returns `true` if the
+/// cursor moved (i.e. it was not on the last line).
+fn cursor_down_in_composer(state: &mut AppState) -> bool {
+    let after = &state.composer[state.composer_cursor..];
+    let Some(next_nl_rel) = after.find('\n') else {
+        return false; // already on last line
+    };
+    let before = &state.composer[..state.composer_cursor];
+    let current_line_start = before.rfind('\n').map(|p| p + 1).unwrap_or(0);
+    let col = before[current_line_start..].chars().count();
+    let next_line_start = state.composer_cursor + next_nl_rel + 1;
+    let next_line_end = state.composer[next_line_start..]
+        .find('\n')
+        .map(|p| next_line_start + p)
+        .unwrap_or(state.composer.len());
+    let next_line = &state.composer[next_line_start..next_line_end];
+    let target_col = col.min(next_line.chars().count());
+    state.composer_cursor = next_line_start
+        + next_line
+            .char_indices()
+            .nth(target_col)
+            .map(|(i, _)| i)
+            .unwrap_or(next_line.len());
+    true
+}
+
+/// Browse input history backward (shell-style Up arrow).
+fn browse_history_backward(state: &mut AppState) {
+    if state.input_history.is_empty() {
+        return;
+    }
+    if state.history_index.is_none() {
+        state.input_draft = state.composer.clone();
+    }
+    let idx = match state.history_index {
+        Some(0) => 0,
+        Some(i) => i - 1,
+        None => state.input_history.len() - 1,
+    };
+    state.history_index = Some(idx);
+    state.composer = state.input_history[idx].clone();
+    state.composer_cursor = state.composer.len();
+    state.paste_blocks.clear();
+}
+
+/// Browse input history forward (shell-style Down arrow).
+fn browse_history_forward(state: &mut AppState) {
+    match state.history_index {
+        Some(i) if i + 1 < state.input_history.len() => {
+            state.history_index = Some(i + 1);
+            state.composer = state.input_history[i + 1].clone();
+            state.composer_cursor = state.composer.len();
+        }
+        Some(_) => {
+            state.history_index = None;
+            state.composer = state.input_draft.clone();
+            state.composer_cursor = state.composer.len();
+            state.input_draft.clear();
+        }
+        None => {}
+    }
+    state.paste_blocks.clear();
 }
