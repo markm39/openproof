@@ -1,0 +1,5 @@
+# Files to copy into git worktrees (gitignored files that sessions need)
+.env
+.env.local
+.openproof/
+CLAUDE.md
