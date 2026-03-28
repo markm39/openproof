@@ -103,17 +103,24 @@ impl AppState {
         }
     }
 
+    /// Threshold for collapsing paste into a marker block.
+    /// Pastes shorter than this AND single-line are inlined directly.
+    const PASTE_INLINE_MAX: usize = 120;
+
     pub(crate) fn apply_paste(&mut self, text: String) {
         if self.focus != FocusPane::Composer {
             return;
         }
-        let line_count = text.lines().count();
-        if line_count < 2 {
-            // Single-line paste: inline directly.
+        // Strip carriage returns to normalize line endings (Windows \r\n -> \n).
+        let text = text.replace('\r', "");
+        let is_multiline = text.lines().count() >= 2;
+        let is_long = text.len() > Self::PASTE_INLINE_MAX;
+        if !is_multiline && !is_long {
+            // Short single-line paste: inline directly.
             self.composer.insert_str(self.composer_cursor, &text);
             self.composer_cursor += text.len();
         } else {
-            // Multi-line paste: store as a collapsed block.
+            // Long or multi-line paste: store as a collapsed block.
             let marker_index = self.composer[..self.composer_cursor]
                 .chars()
                 .filter(|&c| c == PASTE_MARKER)
