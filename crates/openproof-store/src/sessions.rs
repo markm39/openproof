@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use chrono::Utc;
-use openproof_protocol::{CloudPolicy, ProofSessionState, SessionSnapshot, TranscriptEntry};
+use openproof_protocol::{
+    CloudPolicy, DashboardSessionSummary, ProofSessionState, SessionSnapshot, TranscriptEntry,
+};
 use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::fs;
@@ -76,6 +78,114 @@ impl AppStore {
     pub fn save_session(&self, session: &SessionSnapshot) -> Result<()> {
         let conn = self.connect()?;
         self.upsert_session(&conn, session)
+    }
+
+    /// Lightweight session listing that avoids deserializing JSON blobs.
+    /// Uses SQLite json functions to compute counts at the database level.
+    pub fn list_session_summaries(&self) -> Result<Vec<DashboardSessionSummary>> {
+        let conn = self.connect()?;
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, title, updated_at, workspace_label,
+                   json_array_length(transcript_json) AS transcript_entries,
+                   json_array_length(json_extract(proof_json, '$.nodes')) AS proof_nodes
+            FROM sessions
+            ORDER BY updated_at DESC
+            "#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(DashboardSessionSummary {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                updated_at: row.get(2)?,
+                workspace_label: row.get(3)?,
+                transcript_entries: row.get::<_, i64>(4).unwrap_or(0).max(0) as usize,
+                proof_nodes: row.get::<_, i64>(5).unwrap_or(0).max(0) as usize,
+                active_node_label: None,
+                proof_phase: None,
+                last_role: None,
+                last_excerpt: None,
+            })
+        })?;
+        let mut summaries = Vec::new();
+        for row in rows {
+            summaries.push(row?);
+        }
+        Ok(summaries)
+    }
+
+    pub fn delete_session(&self, session_id: &str) -> Result<bool> {
+        let conn = self.connect()?;
+        let deleted = conn.execute("DELETE FROM sessions WHERE id = ?", params![session_id])?;
+        if deleted > 0 {
+            let _ = conn.execute(
+                "DELETE FROM verification_runs WHERE session_id = ?",
+                params![session_id],
+            );
+            let _ = conn.execute(
+                "DELETE FROM attempt_logs WHERE session_id = ?",
+                params![session_id],
+            );
+            let _ = conn.execute(
+                "DELETE FROM sync_queue WHERE session_id = ?",
+                params![session_id],
+            );
+            let ws_dir = self.workspace_dir(session_id);
+            if ws_dir.exists() {
+                let _ = fs::remove_dir_all(&ws_dir);
+            }
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    pub fn delete_sessions(&self, session_ids: &[String]) -> Result<usize> {
+        if session_ids.is_empty() {
+            return Ok(0);
+        }
+        let conn = self.connect()?;
+        let tx = conn.unchecked_transaction()?;
+        let placeholders: Vec<&str> = session_ids.iter().map(|_| "?").collect();
+        let in_clause = placeholders.join(",");
+        let params: Vec<&dyn rusqlite::ToSql> = session_ids
+            .iter()
+            .map(|id| id as &dyn rusqlite::ToSql)
+            .collect();
+        let deleted = tx.execute(
+            &format!("DELETE FROM sessions WHERE id IN ({in_clause})"),
+            params.as_slice(),
+        )?;
+        let _ = tx.execute(
+            &format!("DELETE FROM verification_runs WHERE session_id IN ({in_clause})"),
+            params.as_slice(),
+        );
+        let _ = tx.execute(
+            &format!("DELETE FROM attempt_logs WHERE session_id IN ({in_clause})"),
+            params.as_slice(),
+        );
+        let _ = tx.execute(
+            &format!("DELETE FROM sync_queue WHERE session_id IN ({in_clause})"),
+            params.as_slice(),
+        );
+        tx.commit()?;
+        for id in session_ids {
+            let ws_dir = self.workspace_dir(id);
+            if ws_dir.exists() {
+                let _ = fs::remove_dir_all(&ws_dir);
+            }
+        }
+        Ok(deleted)
+    }
+
+    pub fn rename_session(&self, session_id: &str, new_title: &str) -> Result<bool> {
+        let conn = self.connect()?;
+        let now = Utc::now().to_rfc3339();
+        let updated = conn.execute(
+            "UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?",
+            params![new_title, now, session_id],
+        )?;
+        Ok(updated > 0)
     }
 
     pub fn import_legacy_sessions(&self) -> Result<openproof_protocol::LegacyImportSummary> {
