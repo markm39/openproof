@@ -1018,17 +1018,15 @@ fn build_input_lines(text: &str, cursor: usize, paste_blocks: &[String]) -> Vec<
                 current_spans.push(Span::styled(label, paste_label_style()));
             }
             block_idx += 1;
-        } else {
-            if at_cursor {
-                // Flush buffer, then emit cursor char.
-                if !buf.is_empty() {
-                    current_spans.push(Span::raw(buf.clone()));
-                    buf.clear();
-                }
-                current_spans.push(Span::styled(ch.to_string(), cursor_style));
-            } else {
-                buf.push(ch);
+        } else if at_cursor {
+            // Flush buffer, then emit cursor char.
+            if !buf.is_empty() {
+                current_spans.push(Span::raw(buf.clone()));
+                buf.clear();
             }
+            current_spans.push(Span::styled(ch.to_string(), cursor_style));
+        } else {
+            buf.push(ch);
         }
     }
 

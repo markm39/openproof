@@ -32,8 +32,10 @@ pub fn extract_sorry_goals(project_dir: &Path, content: &str) -> Result<Vec<(usi
         // or "declaration uses 'sorry'"
         if line.contains("unsolved goals") || line.contains("uses 'sorry'") {
             if let Some(ln) = extract_line_number(line, &scratch_path) {
-                if in_goal && current_line.is_some() {
-                    goals.push((current_line.unwrap(), current_goal.trim().to_string()));
+                if in_goal {
+                    if let Some(ln) = current_line {
+                        goals.push((ln, current_goal.trim().to_string()));
+                    }
                 }
                 current_line = Some(ln);
                 current_goal.clear();
@@ -55,8 +57,10 @@ pub fn extract_sorry_goals(project_dir: &Path, content: &str) -> Result<Vec<(usi
         }
     }
     // Flush last goal
-    if in_goal && current_line.is_some() && !current_goal.trim().is_empty() {
-        goals.push((current_line.unwrap(), current_goal.trim().to_string()));
+    if in_goal && !current_goal.trim().is_empty() {
+        if let Some(ln) = current_line {
+            goals.push((ln, current_goal.trim().to_string()));
+        }
     }
 
     Ok(goals)

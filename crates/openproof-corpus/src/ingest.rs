@@ -358,7 +358,7 @@ struct DeclarationRecord {
 }
 
 async fn flush_declarations(store: &AppStore, batch: &mut Vec<DeclarationRecord>) -> Result<()> {
-    let items: Vec<DeclarationRecord> = batch.drain(..).collect();
+    let items: Vec<DeclarationRecord> = std::mem::take(batch);
     let store = store.clone();
     tokio::task::spawn_blocking(move || {
         let conn = store.connect_for_bulk()?;

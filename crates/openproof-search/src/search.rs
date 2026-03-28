@@ -421,7 +421,7 @@ pub fn pantograph_best_first_search(
             };
             expansions += 1;
 
-            if !result.error.is_none() || result.new_state_id.is_none() {
+            if result.error.is_some() || result.new_state_id.is_none() {
                 continue; // tactic failed
             }
 

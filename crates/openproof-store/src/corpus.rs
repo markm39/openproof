@@ -782,11 +782,9 @@ impl AppStore {
                         ))
                     },
                 ) {
-                    for row in edge_rows {
-                        if let Ok(item) = row {
-                            if seen_labels.insert(item.0.clone()) {
-                                items.push(item);
-                            }
+                    for item in edge_rows.flatten() {
+                        if seen_labels.insert(item.0.clone()) {
+                            items.push(item);
                         }
                     }
                 }
@@ -809,10 +807,8 @@ impl AppStore {
         )?;
         let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
         let mut items = Vec::new();
-        for row in rows {
-            if let Ok(item) = row {
-                items.push(item);
-            }
+        for item in rows.flatten() {
+            items.push(item);
         }
         Ok(items)
     }

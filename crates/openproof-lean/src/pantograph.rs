@@ -116,7 +116,7 @@ impl Pantograph {
         let mut response_line = String::new();
         self.reader.read_line(&mut response_line)?;
 
-        serde_json::from_str(&response_line.trim())
+        serde_json::from_str(response_line.trim())
             .with_context(|| format!("parsing Pantograph response: {}", response_line.trim()))
     }
 

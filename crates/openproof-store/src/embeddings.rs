@@ -88,6 +88,7 @@ impl EmbeddingStore {
     }
 
     /// Upsert a verified corpus item into the vector store.
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_item(
         &self,
         identity_key: &str,

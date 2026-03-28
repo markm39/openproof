@@ -333,9 +333,7 @@ pub async fn run_autonomous(
                                     node.status = prev;
                                 }
                             }
-                            if node.content.contains("sorry") {
-                                node.status = openproof_protocol::ProofNodeStatus::Proving;
-                            } else if !node.content.trim().is_empty() {
+                            if node.content.contains("sorry") || !node.content.trim().is_empty() {
                                 node.status = openproof_protocol::ProofNodeStatus::Proving;
                             }
                             node.updated_at = now.clone();

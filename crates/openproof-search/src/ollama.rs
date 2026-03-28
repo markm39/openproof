@@ -41,6 +41,12 @@ pub struct OllamaProposer {
     top_p: f64,
 }
 
+impl Default for OllamaProposer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OllamaProposer {
     /// Create a new proposer with default settings.
     pub fn new() -> Self {

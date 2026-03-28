@@ -201,7 +201,7 @@ impl CloudCorpusClient {
         if share_mode == ShareMode::Local {
             return Ok(Vec::new());
         }
-        let clamped_limit = limit.max(1).min(32);
+        let clamped_limit = limit.clamp(1, 32);
         let response = self
             .client
             .get(format!("{base_url}/api/v1/search"))
@@ -324,7 +324,7 @@ impl CloudCorpusClient {
             Some(url) => url,
             None => return Ok(Vec::new()),
         };
-        let clamped_limit = limit.max(1).min(32);
+        let clamped_limit = limit.clamp(1, 32);
         let response = match self
             .client
             .get(format!("{base_url}/api/v1/search/semantic"))

@@ -353,7 +353,7 @@ fn generate_tex(session: &SessionSnapshot) -> String {
     doc.push_str("\\newtheorem{theorem}{Theorem}\n");
     doc.push_str("\\newtheorem{lemma}[theorem]{Lemma}\n");
     doc.push_str("\\newtheorem{proposition}[theorem]{Proposition}\n");
-    doc.push_str("\n");
+    doc.push('\n');
     doc.push_str(&format!("\\title{{{}}}\n", tex_escape(title)));
     doc.push_str("\\author{OpenProof}\n");
     doc.push_str("\\date{\\today}\n");
@@ -405,7 +405,7 @@ fn generate_tex(session: &SessionSnapshot) -> String {
             ));
             if !node.statement.is_empty() {
                 doc.push_str(&tex_escape(&node.statement));
-                doc.push_str("\n");
+                doc.push('\n');
             }
             doc.push_str(&format!("\\end{{{env}}}\n\n"));
 

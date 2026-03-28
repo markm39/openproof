@@ -277,12 +277,10 @@ pub async fn run_app(
                                                 node.status = prev;
                                             }
                                         }
-                                        // Mark sorry-containing nodes as Proving (needs work)
-                                        // Mark sorry-free nodes as Proving (needs verification)
-                                        if node.content.contains("sorry") {
-                                            node.status =
-                                                openproof_protocol::ProofNodeStatus::Proving;
-                                        } else if !node.content.trim().is_empty() {
+                                        // Mark non-empty nodes as Proving (needs verification)
+                                        if node.content.contains("sorry")
+                                            || !node.content.trim().is_empty()
+                                        {
                                             node.status =
                                                 openproof_protocol::ProofNodeStatus::Proving;
                                         }
