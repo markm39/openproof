@@ -239,8 +239,14 @@ fn extract_string_array(value: &Value) -> Option<Vec<String>> {
 }
 
 fn extract_pending_question(value: &Value) -> Option<ProofQuestionState> {
-    let raw = value.get("proof").and_then(|item| item.get("pendingQuestion"))?;
-    let prompt = raw.get("prompt").and_then(Value::as_str)?.trim().to_string();
+    let raw = value
+        .get("proof")
+        .and_then(|item| item.get("pendingQuestion"))?;
+    let prompt = raw
+        .get("prompt")
+        .and_then(Value::as_str)?
+        .trim()
+        .to_string();
     if prompt.is_empty() {
         return None;
     }
@@ -303,7 +309,11 @@ fn extract_proof_nodes(value: &Value) -> Vec<ProofNode> {
     nodes
         .iter()
         .filter_map(|node| {
-            let kind = match node.get("kind").and_then(Value::as_str).unwrap_or("theorem") {
+            let kind = match node
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("theorem")
+            {
                 "lemma" => ProofNodeKind::Lemma,
                 "theorem" => ProofNodeKind::Theorem,
                 "artifact" => ProofNodeKind::Artifact,
@@ -311,7 +321,11 @@ fn extract_proof_nodes(value: &Value) -> Vec<ProofNode> {
                 "conjecture" => ProofNodeKind::Conjecture,
                 _ => return None,
             };
-            let label = node.get("label").and_then(Value::as_str)?.trim().to_string();
+            let label = node
+                .get("label")
+                .and_then(Value::as_str)?
+                .trim()
+                .to_string();
             let statement = node
                 .get("statement")
                 .and_then(Value::as_str)
@@ -363,12 +377,14 @@ fn extract_proof_nodes(value: &Value) -> Vec<ProofNode> {
                     .get("dependsOn")
                     .or_else(|| node.get("depends_on"))
                     .and_then(Value::as_array)
-                    .map(|arr| arr.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_string)
+                            .collect()
+                    })
                     .unwrap_or_default(),
-                depth: node
-                    .get("depth")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0) as usize,
+                depth: node.get("depth").and_then(Value::as_u64).unwrap_or(0) as usize,
                 updated_at: node
                     .get("updatedAt")
                     .and_then(Value::as_str)
@@ -380,7 +396,9 @@ fn extract_proof_nodes(value: &Value) -> Vec<ProofNode> {
 }
 
 pub(crate) fn extract_last_verification(value: &Value) -> Option<LeanVerificationSummary> {
-    let raw = value.get("runtime").and_then(|item| item.get("lastLeanCheck"))?;
+    let raw = value
+        .get("runtime")
+        .and_then(|item| item.get("lastLeanCheck"))?;
     Some(LeanVerificationSummary {
         ok: raw.get("ok").and_then(Value::as_bool).unwrap_or(false),
         code: raw

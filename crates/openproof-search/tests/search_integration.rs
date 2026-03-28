@@ -26,11 +26,31 @@ fn lean_project_dir() -> PathBuf {
 
 fn standard_tactics() -> Vec<String> {
     vec![
-        "simp", "omega", "ring", "norm_num", "linarith", "aesop",
-        "grind", "decide", "trivial", "exact?", "apply?", "simp_all",
-        "tauto", "contradiction", "norm_cast", "positivity", "gcongr",
-        "polyrith", "field_simp", "push_cast", "ring_nf", "nlinarith",
-        "norm_num [*]", "simp [*]", "grind?",
+        "simp",
+        "omega",
+        "ring",
+        "norm_num",
+        "linarith",
+        "aesop",
+        "grind",
+        "decide",
+        "trivial",
+        "exact?",
+        "apply?",
+        "simp_all",
+        "tauto",
+        "contradiction",
+        "norm_cast",
+        "positivity",
+        "gcongr",
+        "polyrith",
+        "field_simp",
+        "push_cast",
+        "ring_nf",
+        "nlinarith",
+        "norm_num [*]",
+        "simp [*]",
+        "grind?",
     ]
     .into_iter()
     .map(String::from)
@@ -38,9 +58,7 @@ fn standard_tactics() -> Vec<String> {
 }
 
 fn make_propose_fn(tactics: Vec<String>) -> ProposeFn {
-    Box::new(move |_goal: &str, _ctx: &str, k: usize| {
-        Ok(tactics.iter().take(k).cloned().collect())
-    })
+    Box::new(move |_goal: &str, _ctx: &str, k: usize| Ok(tactics.iter().take(k).cloned().collect()))
 }
 
 /// Write a Lean file, spawn LSP, and warm it up by retrying get_diagnostics
@@ -51,7 +69,10 @@ fn setup_lsp_test(content: &str) -> (Mutex<LeanLspMcp>, PathBuf, Vec<(usize, usi
     std::fs::write(&scratch_path, content).expect("write scratch file");
 
     let sorrys = find_sorry_positions(content);
-    assert!(!sorrys.is_empty(), "Test content must have at least one sorry");
+    assert!(
+        !sorrys.is_empty(),
+        "Test content must have at least one sorry"
+    );
 
     // Spawn LSP and warm up with retries (first elaboration takes 30-90s)
     println!("Spawning lean-lsp-mcp and warming up (first load may take 60-90s)...");
@@ -61,8 +82,7 @@ fn setup_lsp_test(content: &str) -> (Mutex<LeanLspMcp>, PathBuf, Vec<(usize, usi
     let max_retries = 4;
     let mut lsp = None;
     for attempt in 1..=max_retries {
-        let client = LeanLspMcp::spawn(&project_dir)
-            .expect("Failed to spawn lean-lsp-mcp");
+        let client = LeanLspMcp::spawn(&project_dir).expect("Failed to spawn lean-lsp-mcp");
         let mut client = client;
 
         // Try a diagnostics call to trigger elaboration
@@ -110,14 +130,27 @@ fn print_result(result: &SearchResult) {
         SearchResult::Solved { tactics, .. } => {
             println!("  SOLVED with {} tactics: {:?}", tactics.len(), tactics);
         }
-        SearchResult::Partial { tactics, remaining_goals, .. } => {
-            println!("  PARTIAL: {} goals remain, tactics: {:?}", remaining_goals, tactics);
+        SearchResult::Partial {
+            tactics,
+            remaining_goals,
+            ..
+        } => {
+            println!(
+                "  PARTIAL: {} goals remain, tactics: {:?}",
+                remaining_goals, tactics
+            );
         }
         SearchResult::Exhausted { expansions } => {
             println!("  EXHAUSTED after {} expansions", expansions);
         }
-        SearchResult::Timeout { best_tactics, remaining_goals } => {
-            println!("  TIMEOUT: {} goals remain, best: {:?}", remaining_goals, best_tactics);
+        SearchResult::Timeout {
+            best_tactics,
+            remaining_goals,
+        } => {
+            println!(
+                "  TIMEOUT: {} goals remain, best: {:?}",
+                remaining_goals, best_tactics
+            );
         }
     }
 }
@@ -254,7 +287,10 @@ theorem e2e_test (n : Nat) : n + 0 = n := by
     let start = Instant::now();
     let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
         .expect("search failed");
-    println!("[e2e] Search completed in {:.2}s", start.elapsed().as_secs_f64());
+    println!(
+        "[e2e] Search completed in {:.2}s",
+        start.elapsed().as_secs_f64()
+    );
     print_result(&result);
 
     let tactics = match &result {
@@ -269,8 +305,8 @@ theorem e2e_test (n : Nat) : n + 0 = n := by
     );
     println!("[e2e] Verifying filled proof:\n{}", content_filled);
 
-    let (ok, output) = run_lean_verify_raw(&project_dir, &content_filled)
-        .expect("lean verify filled");
+    let (ok, output) =
+        run_lean_verify_raw(&project_dir, &content_filled).expect("lean verify filled");
     if !output.is_empty() {
         println!("[e2e] Lean output: {}", &output[..output.len().min(500)]);
     }
@@ -352,9 +388,16 @@ theorem test_penalty (n : Nat) : 0 + n = n := by
     print_result(&result);
 
     if let SearchResult::Solved { tactics, .. } = &result {
-        assert!(tactics.len() <= 2, "High penalty should produce short proof, got {} steps", tactics.len());
+        assert!(
+            tactics.len() <= 2,
+            "High penalty should produce short proof, got {} steps",
+            tactics.len()
+        );
     }
-    assert!(result.is_solved(), "Expected Solved even with high length penalty");
+    assert!(
+        result.is_solved(),
+        "Expected Solved even with high length penalty"
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -380,8 +423,8 @@ fn pantograph_solves_simp_goal() {
     let goal = "forall (n : Nat), n + 0 = n";
     println!("Goal: {goal}");
     let start = Instant::now();
-    let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config)
-        .expect("search failed");
+    let result =
+        pantograph_best_first_search(&pg, &propose_fn, goal, "", &config).expect("search failed");
     println!("Completed in {:.3}s", start.elapsed().as_secs_f64());
     print_result(&result);
     assert!(result.is_solved());
@@ -399,8 +442,8 @@ fn pantograph_solves_with_grind() {
     let goal = "forall (a b c : Nat), a = b -> b = c -> a = c";
     println!("Goal (grind-only): {goal}");
     let start = Instant::now();
-    let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config)
-        .expect("search failed");
+    let result =
+        pantograph_best_first_search(&pg, &propose_fn, goal, "", &config).expect("search failed");
     println!("Completed in {:.3}s", start.elapsed().as_secs_f64());
     print_result(&result);
     assert!(result.is_solved(), "grind should solve transitivity");
@@ -417,7 +460,10 @@ fn pantograph_solves_multi_goals() {
         ("forall (n : Nat), 0 + n = n", "0+n=n"),
         ("forall (a b : Nat), a + b = b + a", "add_comm"),
         ("forall (n : Nat), n * 1 = n", "mul_one"),
-        ("forall (x : Int), (x + 1) * (x + 1) = x * x + 2 * x + 1", "ring_id"),
+        (
+            "forall (x : Int), (x + 1) * (x + 1) = x * x + 2 * x + 1",
+            "ring_id",
+        ),
         ("forall (n : Nat), n < n + 1", "lt_succ"),
     ];
 

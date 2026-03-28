@@ -51,7 +51,8 @@ pub fn parse_lean_declarations(content: &str) -> Vec<LeanDeclaration> {
             let mut body_lines = vec![lines[i].to_string()];
 
             let mut j = i + 1;
-            let mut _found_body = trimmed.contains(":=") || trimmed.contains(" by") || trimmed.contains(" where");
+            let mut _found_body =
+                trimmed.contains(":=") || trimmed.contains(" by") || trimmed.contains(" where");
             while j < lines.len() {
                 let next = lines[j];
                 let next_trimmed = next.trim();
@@ -60,7 +61,8 @@ pub fn parse_lean_declarations(content: &str) -> Vec<LeanDeclaration> {
                     && !next.starts_with(' ')
                     && !next.starts_with('\t')
                     && keywords.iter().any(|&kw| {
-                        next_trimmed.starts_with(kw) && next_trimmed[kw.len()..].starts_with(|c: char| c.is_whitespace())
+                        next_trimmed.starts_with(kw)
+                            && next_trimmed[kw.len()..].starts_with(|c: char| c.is_whitespace())
                     })
                 {
                     break;
@@ -76,7 +78,10 @@ pub fn parse_lean_declarations(content: &str) -> Vec<LeanDeclaration> {
                 }
 
                 body_lines.push(next.to_string());
-                if next_trimmed.contains(":=") || next_trimmed.contains(" by") || next_trimmed.contains(" where") {
+                if next_trimmed.contains(":=")
+                    || next_trimmed.contains(" by")
+                    || next_trimmed.contains(" where")
+                {
                     _found_body = true;
                 }
                 j += 1;
@@ -113,10 +118,7 @@ pub fn parse_lean_declarations(content: &str) -> Vec<LeanDeclaration> {
 
 /// Convert parsed Lean declarations into ProofNode entries for the proof tree.
 /// The first theorem/lemma becomes the root; subsequent ones are children.
-pub fn declarations_to_proof_nodes(
-    decls: &[LeanDeclaration],
-    session_id: &str,
-) -> Vec<ProofNode> {
+pub fn declarations_to_proof_nodes(decls: &[LeanDeclaration], session_id: &str) -> Vec<ProofNode> {
     let now = Utc::now().to_rfc3339();
     let mut nodes = Vec::new();
     let mut current_root_id: Option<String> = None;
@@ -146,7 +148,11 @@ pub fn declarations_to_proof_nodes(
             current_root_id = Some(id.clone());
         }
 
-        let parent_id = if is_root { None } else { current_root_id.clone() };
+        let parent_id = if is_root {
+            None
+        } else {
+            current_root_id.clone()
+        };
         let depth = if is_root { 0 } else { 1 };
 
         // Extract dependencies: which other declarations does this one reference?
@@ -181,10 +187,18 @@ pub fn extract_dependencies(body: &str, all_names: &[&str], self_name: &str) -> 
         if body.contains(name) {
             // Verify it's a word boundary (not a substring of a longer name)
             for (i, _) in body.match_indices(name) {
-                let before = if i > 0 { body.as_bytes().get(i - 1).copied() } else { Some(b' ') };
+                let before = if i > 0 {
+                    body.as_bytes().get(i - 1).copied()
+                } else {
+                    Some(b' ')
+                };
                 let after = body.as_bytes().get(i + name.len()).copied();
-                let is_word = before.map(|b| !b.is_ascii_alphanumeric() && b != b'_').unwrap_or(true)
-                    && after.map(|b| !b.is_ascii_alphanumeric() && b != b'_').unwrap_or(true);
+                let is_word = before
+                    .map(|b| !b.is_ascii_alphanumeric() && b != b'_')
+                    .unwrap_or(true)
+                    && after
+                        .map(|b| !b.is_ascii_alphanumeric() && b != b'_')
+                        .unwrap_or(true);
                 if is_word {
                     deps.push(name.to_string());
                     break;

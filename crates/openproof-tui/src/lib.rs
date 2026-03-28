@@ -128,7 +128,10 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
                 entry.content.clone()
             };
             lines.push(Line::from(vec![
-                Span::styled(">> ", Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM)),
+                Span::styled(
+                    ">> ",
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM),
+                ),
                 Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan)),
                 Span::styled(
                     format!("({args_summary})"),
@@ -142,10 +145,17 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
             let output_lines: Vec<&str> = entry.content.lines().take(10).collect();
             let truncated = output_lines.len() < entry.content.lines().count();
             lines.push(Line::from(vec![
-                Span::styled("<< ", Style::default().fg(Color::Green).add_modifier(Modifier::DIM)),
+                Span::styled(
+                    "<< ",
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::DIM),
+                ),
                 Span::styled(
                     format!("{tool_name}: "),
-                    Style::default().fg(Color::Green).add_modifier(Modifier::DIM),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::DIM),
                 ),
             ]));
             for ol in &output_lines {
@@ -165,7 +175,9 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
             if truncated {
                 lines.push(Line::from(Span::styled(
                     "   ... (output truncated)".to_string(),
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::DIM),
                 )));
             }
         }
@@ -173,7 +185,9 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
             let filename = entry.title.as_deref().unwrap_or("file");
             lines.push(Line::from(Span::styled(
                 format!("  {filename}"),
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )));
             for diff_line in entry.content.lines().take(30) {
                 let style = if diff_line.starts_with('+') && !diff_line.starts_with("+++") {
@@ -192,7 +206,9 @@ pub fn render_entry(entry: &openproof_protocol::TranscriptEntry) -> Vec<Line<'st
             for thought_line in entry.content.lines() {
                 lines.push(Line::from(Span::styled(
                     format!("  > {thought_line}"),
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC),
+                    Style::default()
+                        .fg(Color::DarkGray)
+                        .add_modifier(Modifier::ITALIC),
                 )));
             }
         }
@@ -213,7 +229,8 @@ pub fn draw(frame: &mut custom_terminal::Frame<'_>, state: &mut AppState) {
     let area = frame.area();
 
     let prefix_len = 2; // "> "
-    let input_height = compute_input_height(&state.composer, prefix_len, area.width, &state.paste_blocks);
+    let input_height =
+        compute_input_height(&state.composer, prefix_len, area.width, &state.paste_blocks);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -343,21 +360,29 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
                             }
                             openproof_protocol::MessageRole::Assistant => {
                                 let cleaned = strip_markers(&entry.content);
-                                lines.extend(markdown::render_markdown(
-                                    &cleaned,
-                                    Style::default(),
-                                ));
+                                lines.extend(markdown::render_markdown(&cleaned, Style::default()));
                             }
                             openproof_protocol::MessageRole::ToolCall => {
                                 let tool_name = entry.title.as_deref().unwrap_or("tool");
                                 let args_summary = if entry.content.len() > 100 {
-                                    format!("{}...", entry.content.chars().take(100).collect::<String>())
+                                    format!(
+                                        "{}...",
+                                        entry.content.chars().take(100).collect::<String>()
+                                    )
                                 } else {
                                     entry.content.clone()
                                 };
                                 lines.push(Line::from(vec![
-                                    Span::styled(">> ", Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM)),
-                                    Span::styled(tool_name.to_string(), Style::default().fg(Color::Cyan)),
+                                    Span::styled(
+                                        ">> ",
+                                        Style::default()
+                                            .fg(Color::Cyan)
+                                            .add_modifier(Modifier::DIM),
+                                    ),
+                                    Span::styled(
+                                        tool_name.to_string(),
+                                        Style::default().fg(Color::Cyan),
+                                    ),
                                     Span::styled(
                                         format!("({args_summary})"),
                                         Style::default().fg(Color::DarkGray),
@@ -366,20 +391,32 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
                             }
                             openproof_protocol::MessageRole::ToolResult => {
                                 let tool_name = entry.title.as_deref().unwrap_or("tool");
-                                let output_lines: Vec<&str> = entry.content.lines().take(10).collect();
+                                let output_lines: Vec<&str> =
+                                    entry.content.lines().take(10).collect();
                                 let truncated = output_lines.len() < entry.content.lines().count();
                                 lines.push(Line::from(vec![
-                                    Span::styled("<< ", Style::default().fg(Color::Green).add_modifier(Modifier::DIM)),
+                                    Span::styled(
+                                        "<< ",
+                                        Style::default()
+                                            .fg(Color::Green)
+                                            .add_modifier(Modifier::DIM),
+                                    ),
                                     Span::styled(
                                         format!("{tool_name}: "),
-                                        Style::default().fg(Color::Green).add_modifier(Modifier::DIM),
+                                        Style::default()
+                                            .fg(Color::Green)
+                                            .add_modifier(Modifier::DIM),
                                     ),
                                 ]));
                                 for ol in &output_lines {
                                     let trimmed = ol.trim();
-                                    let style = if trimmed.starts_with('+') && !trimmed.starts_with("+++") {
+                                    let style = if trimmed.starts_with('+')
+                                        && !trimmed.starts_with("+++")
+                                    {
                                         Style::default().fg(Color::Green)
-                                    } else if trimmed.starts_with('-') && !trimmed.starts_with("---") {
+                                    } else if trimmed.starts_with('-')
+                                        && !trimmed.starts_with("---")
+                                    {
                                         Style::default().fg(Color::Red)
                                     } else if trimmed.starts_with("@@") {
                                         Style::default().fg(Color::Cyan).add_modifier(Modifier::DIM)
@@ -391,7 +428,9 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
                                 if truncated {
                                     lines.push(Line::from(Span::styled(
                                         "   ... (output truncated)".to_string(),
-                                        Style::default().fg(Color::DarkGray).add_modifier(Modifier::DIM),
+                                        Style::default()
+                                            .fg(Color::DarkGray)
+                                            .add_modifier(Modifier::DIM),
                                     )));
                                 }
                             }
@@ -425,7 +464,10 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
                     .add_modifier(Modifier::BOLD),
             )));
             if matches!(
-                state.current_session().and_then(|s| s.transcript.last()).map(|e| e.role),
+                state
+                    .current_session()
+                    .and_then(|s| s.transcript.last())
+                    .map(|e| e.role),
                 Some(openproof_protocol::MessageRole::Assistant)
             ) {
                 // Already have an assistant header from prior streaming
@@ -449,17 +491,10 @@ fn draw_chat_area(f: &mut custom_terminal::Frame<'_>, state: &mut AppState, area
             let elapsed_str = if elapsed_ms < 60_000 {
                 format!("{}s", elapsed_ms / 1000)
             } else {
-                format!(
-                    "{}m {}s",
-                    elapsed_ms / 60_000,
-                    (elapsed_ms % 60_000) / 1000
-                )
+                format!("{}m {}s", elapsed_ms / 60_000, (elapsed_ms % 60_000) / 1000)
             };
             all_lines.push(Line::from(vec![
-                Span::styled(
-                    format!("  {spinner} "),
-                    Style::default().fg(Color::Yellow),
-                ),
+                Span::styled(format!("  {spinner} "), Style::default().fg(Color::Yellow)),
                 Span::styled("Thinking... ", Style::default().fg(Color::DarkGray)),
                 Span::styled(
                     format!("({elapsed_str})"),
@@ -524,11 +559,7 @@ fn draw_input_area(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
             .add_modifier(Modifier::BOLD),
     );
 
-    let raw_lines = build_input_lines(
-        &state.composer,
-        state.composer_cursor,
-        &state.paste_blocks,
-    );
+    let raw_lines = build_input_lines(&state.composer, state.composer_cursor, &state.paste_blocks);
 
     // Prepend the "> " prefix to the first line.
     let mut lines: Vec<Line<'static>> = Vec::with_capacity(raw_lines.len());
@@ -574,18 +605,25 @@ fn draw_input_area(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
 // ---------------------------------------------------------------------------
 
 fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: Rect) {
-    let is_autonomous = state.current_session()
+    let is_autonomous = state
+        .current_session()
         .map(|s| s.proof.is_autonomous_running)
         .unwrap_or(false);
-    let auto_iter = state.current_session()
+    let auto_iter = state
+        .current_session()
         .map(|s| s.proof.autonomous_iteration_count)
         .unwrap_or(0);
 
     let text = if state.turn_in_flight || state.verification_in_flight {
-        let elapsed = state.activity_started_at
+        let elapsed = state
+            .activity_started_at
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
-        let elapsed_str = if elapsed > 0 { format!(" ({elapsed}s)") } else { String::new() };
+        let elapsed_str = if elapsed > 0 {
+            format!(" ({elapsed}s)")
+        } else {
+            String::new()
+        };
         let label = if !state.activity_label.is_empty() {
             state.activity_label.clone()
         } else if state.verification_in_flight {
@@ -606,10 +644,15 @@ fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
         let activity = format!("{auto_prefix}{label}{elapsed_str}{iter_info}");
         Span::styled(activity, Style::default().fg(Color::Yellow))
     } else if is_autonomous {
-        let full = state.current_session()
+        let full = state
+            .current_session()
             .map(|s| s.proof.full_autonomous)
             .unwrap_or(false);
-        let mode_label = if full { "full autonomous" } else { "autonomous" };
+        let mode_label = if full {
+            "full autonomous"
+        } else {
+            "autonomous"
+        };
         Span::styled(
             format!(" {mode_label} (iter {auto_iter}) | idle between steps (shift+tab to cycle)"),
             Style::default().fg(Color::Cyan),
@@ -620,8 +663,7 @@ fn draw_status_bar(f: &mut custom_terminal::Frame<'_>, state: &AppState, area: R
             Style::default().fg(Color::DarkGray),
         )
     };
-    let para =
-        Paragraph::new(Line::from(text)).style(Style::default().bg(Color::Rgb(30, 30, 30)));
+    let para = Paragraph::new(Line::from(text)).style(Style::default().bg(Color::Rgb(30, 30, 30)));
     f.render_widget(para, area);
 }
 
@@ -692,16 +734,24 @@ fn draw_completion_popup(f: &mut custom_terminal::Frame<'_>, state: &AppState, c
 // Overlays
 // ---------------------------------------------------------------------------
 
-fn draw_overlay(f: &mut custom_terminal::Frame<'_>, state: &AppState, overlay: &Overlay, area: Rect) {
+fn draw_overlay(
+    f: &mut custom_terminal::Frame<'_>,
+    state: &AppState,
+    overlay: &Overlay,
+    area: Rect,
+) {
     match overlay {
         Overlay::SessionPicker { selected } => draw_session_picker(f, state, *selected, area),
-        Overlay::FocusPicker { items, selected } => {
-            draw_focus_picker(f, items, *selected, area)
-        }
+        Overlay::FocusPicker { items, selected } => draw_focus_picker(f, items, *selected, area),
     }
 }
 
-fn draw_session_picker(f: &mut custom_terminal::Frame<'_>, state: &AppState, selected: usize, area: Rect) {
+fn draw_session_picker(
+    f: &mut custom_terminal::Frame<'_>,
+    state: &AppState,
+    selected: usize,
+    area: Rect,
+) {
     let popup = centered_rect(75, 60, area);
     f.render_widget(Clear, popup);
 
@@ -730,7 +780,10 @@ fn draw_session_picker(f: &mut custom_terminal::Frame<'_>, state: &AppState, sel
         height: 1,
     };
     let header = Paragraph::new(Line::from(Span::styled(
-        format!(" {:30}  {:>5}  {:>5}  {}", "Title", "Msgs", "Nodes", "Updated"),
+        format!(
+            " {:30}  {:>5}  {:>5}  {}",
+            "Title", "Msgs", "Nodes", "Updated"
+        ),
         Style::default()
             .fg(Color::DarkGray)
             .add_modifier(Modifier::BOLD),
@@ -763,7 +816,11 @@ fn draw_session_picker(f: &mut custom_terminal::Frame<'_>, state: &AppState, sel
             } else {
                 Style::default().fg(Color::White)
             };
-            let active = if i == state.selected_session { "*" } else { " " };
+            let active = if i == state.selected_session {
+                "*"
+            } else {
+                " "
+            };
             let ts: String = s.updated_at.chars().take(10).collect();
             let title: String = s.title.chars().take(28).collect();
             let text = format!(
@@ -912,11 +969,7 @@ fn paste_label(block_idx: usize, paste_blocks: &[String]) -> String {
 
 /// Build `Line` objects for the composer, handling newlines, paste block
 /// markers, and cursor rendering. Each `\n` becomes a line break.
-fn build_input_lines(
-    text: &str,
-    cursor: usize,
-    paste_blocks: &[String],
-) -> Vec<Line<'static>> {
+fn build_input_lines(text: &str, cursor: usize, paste_blocks: &[String]) -> Vec<Line<'static>> {
     let cursor_style = Style::default().fg(Color::Black).bg(Color::White);
 
     if text.is_empty() {
@@ -956,10 +1009,7 @@ fn build_input_lines(
                 // Cursor on the paste marker: highlight first char of label.
                 let mut label_chars = label.chars();
                 let first = label_chars.next().unwrap_or(' ');
-                current_spans.push(Span::styled(
-                    first.to_string(),
-                    cursor_style,
-                ));
+                current_spans.push(Span::styled(first.to_string(), cursor_style));
                 let rest: String = label_chars.collect();
                 if !rest.is_empty() {
                     current_spans.push(Span::styled(rest, paste_label_style()));
@@ -998,7 +1048,12 @@ fn build_input_lines(
 
 /// Compute the height needed for the input area, accounting for text wrapping,
 /// newlines, and paste block display labels.
-fn compute_input_height(text: &str, prefix_len: usize, area_width: u16, paste_blocks: &[String]) -> u16 {
+fn compute_input_height(
+    text: &str,
+    prefix_len: usize,
+    area_width: u16,
+    paste_blocks: &[String],
+) -> u16 {
     let usable = area_width as usize;
     if usable == 0 {
         return 3;

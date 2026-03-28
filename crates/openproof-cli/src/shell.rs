@@ -119,7 +119,10 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
                 loop {
                     match cloud.fetch_all_user_verified(500, offset).await {
                         Ok((items, total)) => {
-                            eprintln!("[corpus-module] Cloud: fetched {} items (total: {total})", items.len());
+                            eprintln!(
+                                "[corpus-module] Cloud: fetched {} items (total: {total})",
+                                items.len()
+                            );
                             let n = items.len();
                             for item in items {
                                 all_items.push(openproof_lean::corpus_module::CorpusDeclaration {
@@ -128,7 +131,9 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
                                     artifact_content: item.artifact_content,
                                 });
                             }
-                            if n < 500 { break; }
+                            if n < 500 {
+                                break;
+                            }
                             offset += 500;
                         }
                         Err(e) => {
@@ -142,12 +147,15 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
             // Always supplement with local user-verified items (may have items not yet synced)
             let local_result = tokio::task::spawn_blocking(move || {
                 store_for_corpus.list_user_verified_with_artifacts()
-            }).await;
+            })
+            .await;
             if let Ok(Ok(local_items)) = local_result {
                 for (label, statement, content) in local_items {
                     if !all_items.iter().any(|i| i.label == label) {
                         all_items.push(openproof_lean::corpus_module::CorpusDeclaration {
-                            label, statement, artifact_content: content,
+                            label,
+                            statement,
+                            artifact_content: content,
                         });
                     }
                 }
@@ -158,18 +166,23 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
                 return;
             }
 
-            eprintln!("[corpus-module] Building module with {} declarations", all_items.len());
+            eprintln!(
+                "[corpus-module] Building module with {} declarations",
+                all_items.len()
+            );
             let _ = tokio::task::spawn_blocking(move || {
                 openproof_lean::corpus_module::build_corpus_module(&pd, &all_items)
-            }).await;
+            })
+            .await;
         });
     }
 
     // Spawn Pantograph in background (loads Mathlib ~18s).
     // TUI launches immediately. Tool calls wait for it via the OnceCell.
     let lean_project_dir = resolve_lean_project_dir();
-    let session_prover: std::sync::Arc<std::sync::OnceLock<openproof_lean::proof_tree::SharedProver>> =
-        std::sync::Arc::new(std::sync::OnceLock::new());
+    let session_prover: std::sync::Arc<
+        std::sync::OnceLock<openproof_lean::proof_tree::SharedProver>,
+    > = std::sync::Arc::new(std::sync::OnceLock::new());
     {
         let slot = session_prover.clone();
         let pd = lean_project_dir.clone();
@@ -190,8 +203,19 @@ pub async fn run_shell(launch_cwd: PathBuf) -> Result<()> {
     let mut terminal = openproof_tui::custom_terminal::CustomTerminal::with_options(backend)?;
     let size = terminal.size()?;
     terminal.set_viewport_area(ratatui::layout::Rect::new(0, 0, size.width, size.height));
-    let app_result = run_app(&mut terminal, store, &mut state, tx, &mut rx, session_prover.clone()).await;
-    let _ = crossterm::execute!(terminal.backend_mut(), crossterm::event::DisableBracketedPaste);
+    let app_result = run_app(
+        &mut terminal,
+        store,
+        &mut state,
+        tx,
+        &mut rx,
+        session_prover.clone(),
+    )
+    .await;
+    let _ = crossterm::execute!(
+        terminal.backend_mut(),
+        crossterm::event::DisableBracketedPaste
+    );
     disable_raw_mode()?;
     terminal.show_cursor()?;
     terminal.clear()?;
@@ -245,7 +269,10 @@ pub async fn run_ask(prompt: String) -> Result<()> {
     let response = run_codex_turn(CodexTurnRequest {
         session_id: &session_id,
         messages: &[
-            TurnMessage::chat("system", "You are openproof, a concise formal math assistant."),
+            TurnMessage::chat(
+                "system",
+                "You are openproof, a concise formal math assistant.",
+            ),
             TurnMessage::chat("user", prompt),
         ],
         model: "gpt-5.4",
@@ -287,9 +314,9 @@ pub async fn run_ingest_corpus() -> Result<()> {
     let store = AppStore::open(StorePaths::detect()?)?;
     let lean_root = crate::helpers::resolve_lean_project_dir();
     eprintln!("Ingesting library seeds from {}...", lean_root.display());
-    let results = tokio::task::spawn_blocking(move || {
-        store.ingest_default_library_seeds(&lean_root)
-    }).await??;
+    let results =
+        tokio::task::spawn_blocking(move || store.ingest_default_library_seeds(&lean_root))
+            .await??;
     if results.is_empty() {
         eprintln!("No library seed packages found.");
     } else {

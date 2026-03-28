@@ -74,7 +74,11 @@ fn classify_failure(result: &LeanVerificationSummary) -> String {
         "sorry-placeholder".to_string()
     } else if combined.contains("timeout") {
         "timeout".to_string()
-    } else if let Some(error) = result.error.as_ref().filter(|value| !value.trim().is_empty()) {
+    } else if let Some(error) = result
+        .error
+        .as_ref()
+        .filter(|value| !value.trim().is_empty())
+    {
         error.trim().to_string()
     } else {
         "lean-error".to_string()
@@ -87,7 +91,10 @@ pub(crate) fn summarize_lean_diagnostic(result: &LeanVerificationSummary) -> Str
     } else if !result.stdout.trim().is_empty() {
         result.stdout.trim()
     } else {
-        result.error.as_deref().unwrap_or("Lean verification failed.")
+        result
+            .error
+            .as_deref()
+            .unwrap_or("Lean verification failed.")
     };
     primary.lines().take(12).collect::<Vec<_>>().join("\n")
 }
@@ -200,18 +207,24 @@ impl AppStore {
                 if !seen_labels.insert(sibling.label.clone()) {
                     continue;
                 }
-                let clean = sibling.content.lines()
+                let clean = sibling
+                    .content
+                    .lines()
                     .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
-                    .collect::<Vec<_>>().join("\n");
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 if !clean.trim().is_empty() {
                     parts.push_str(clean.trim());
                     parts.push_str("\n\n");
                 }
             }
             // Add the active node
-            let clean_node = node.content.lines()
+            let clean_node = node
+                .content
+                .lines()
                 .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
-                .collect::<Vec<_>>().join("\n");
+                .collect::<Vec<_>>()
+                .join("\n");
             parts.push_str(clean_node.trim());
             parts
         };
@@ -335,9 +348,12 @@ impl AppStore {
                 if sibling.id == node.id || sibling.content.trim().is_empty() {
                     continue;
                 }
-                let sib_clean = sibling.content.lines()
+                let sib_clean = sibling
+                    .content
+                    .lines()
                     .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
-                    .collect::<Vec<_>>().join("\n");
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 let sib_clean = sib_clean.trim();
                 if sib_clean.is_empty() {
                     continue;
@@ -409,18 +425,26 @@ impl AppStore {
                     if !seen_labels.insert(sibling.label.clone()) {
                         continue;
                     }
-                    let clean = sibling.content.lines()
-                        .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
-                        .collect::<Vec<_>>().join("\n");
+                    let clean = sibling
+                        .content
+                        .lines()
+                        .filter(|l| {
+                            !l.trim().starts_with("import ") && !l.trim().starts_with("open ")
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
                     if !clean.trim().is_empty() {
                         full_content.push_str(clean.trim());
                         full_content.push_str("\n\n");
                     }
                 }
                 // Add the active node
-                let clean_node = node.content.lines()
+                let clean_node = node
+                    .content
+                    .lines()
                     .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
-                    .collect::<Vec<_>>().join("\n");
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 full_content.push_str(clean_node.trim());
 
                 let payload = serde_json::json!({
@@ -604,8 +628,16 @@ impl AppStore {
         let mut update_item = update_item;
         let mut insert_cluster = insert_cluster;
 
-        for (id, label, statement, decl_kind, is_theorem_like, content_hash, created_at, updated_at) in
-            items
+        for (
+            id,
+            label,
+            statement,
+            decl_kind,
+            is_theorem_like,
+            content_hash,
+            created_at,
+            updated_at,
+        ) in items
         {
             let cluster_key = compute_corpus_cluster_key(
                 &statement,
@@ -674,7 +706,9 @@ impl AppStore {
         let conn = self.connect()?;
 
         // Extract keywords (3+ chars, skip common words) and search with AND logic.
-        let skip = ["the", "that", "this", "with", "from", "prove", "show", "for", "and", "not"];
+        let skip = [
+            "the", "that", "this", "with", "from", "prove", "show", "for", "and", "not",
+        ];
         let keywords: Vec<String> = query
             .split(|c: char| !c.is_alphanumeric() && c != '_')
             .filter(|w| w.len() >= 3 && !skip.contains(&w.to_lowercase().as_str()))
@@ -686,7 +720,8 @@ impl AppStore {
         }
 
         // Build WHERE clause: search_text LIKE %kw1% AND search_text LIKE %kw2% ...
-        let conditions: Vec<String> = keywords.iter()
+        let conditions: Vec<String> = keywords
+            .iter()
             .map(|_| "search_text LIKE ?".to_string())
             .collect();
         let where_clause = conditions.join(" AND ");
@@ -702,9 +737,10 @@ impl AppStore {
             .collect();
         params.push(Box::new(limit as i64));
 
-        let rows = stmt.query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )?;
         let mut items = Vec::new();
         let mut seen_labels = std::collections::HashSet::new();
         for row in rows {
@@ -716,7 +752,11 @@ impl AppStore {
         // Graph expansion: find premises that the direct hits depend on.
         if !items.is_empty() {
             let direct_labels: Vec<String> = items.iter().map(|i| i.0.clone()).collect();
-            let placeholders = direct_labels.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let placeholders = direct_labels
+                .iter()
+                .map(|_| "?")
+                .collect::<Vec<_>>()
+                .join(",");
             let edge_sql = format!(
                 r#"SELECT DISTINCT v.label, v.statement, v.visibility
                 FROM corpus_edges e
@@ -734,7 +774,13 @@ impl AppStore {
                 edge_params.push(Box::new(limit as i64));
                 if let Ok(edge_rows) = edge_stmt.query_map(
                     rusqlite::params_from_iter(edge_params.iter().map(|p| p.as_ref())),
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, String>(2)?,
+                        ))
+                    },
                 ) {
                     for row in edge_rows {
                         if let Ok(item) = row {
@@ -761,9 +807,7 @@ impl AppStore {
                WHERE v.origin = 'user-verified'
                ORDER BY v.created_at ASC"#,
         )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?;
+        let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?;
         let mut items = Vec::new();
         for row in rows {
             if let Ok(item) = row {
@@ -783,7 +827,9 @@ impl AppStore {
                WHERE v.label = ? AND v.origin = 'user-verified'
                LIMIT 1"#,
         )?;
-        let result = stmt.query_row(rusqlite::params![label], |row| row.get(0)).ok();
+        let result = stmt
+            .query_row(rusqlite::params![label], |row| row.get(0))
+            .ok();
         Ok(result)
     }
 }

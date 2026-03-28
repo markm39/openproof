@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Paragraph, Wrap};
 use ratatui::Frame;
 
-use super::app::{SetupApp, Step, CORPUS_MODES, PROVIDERS, PROVER_MODELS};
+use super::app::{SetupApp, Step, CORPUS_MODES, PROVER_MODELS, PROVIDERS};
 
 pub fn draw(f: &mut Frame, app: &SetupApp) {
     let area = f.area();
@@ -14,7 +14,7 @@ pub fn draw(f: &mut Frame, app: &SetupApp) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // title
-            Constraint::Min(10),  // content
+            Constraint::Min(10),   // content
             Constraint::Length(1), // footer
         ])
         .split(area);
@@ -87,7 +87,9 @@ fn draw_provider_step(f: &mut Frame, app: &SetupApp, area: Rect) {
         let selected = i == app.provider_selected;
         let marker = if selected { "> " } else { "  " };
         let style = if selected {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
@@ -141,7 +143,9 @@ fn draw_corpus_step(f: &mut Frame, app: &SetupApp, area: Rect) {
         let selected = i == app.corpus_selected;
         let marker = if selected { "> " } else { "  " };
         let style = if selected {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };
@@ -179,7 +183,9 @@ fn draw_prover_step(f: &mut Frame, app: &SetupApp, area: Rect) {
         let selected = i == app.prover_selected;
         let marker = if selected { "> " } else { "  " };
         let style = if selected {
-            Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(Color::White)
         };

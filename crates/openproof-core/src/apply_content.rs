@@ -28,7 +28,11 @@ impl AppState {
             if let Some(title) = parsed.title.as_ref().filter(|item| !item.trim().is_empty()) {
                 session.title = title.trim().to_string();
             }
-            if let Some(problem) = parsed.problem.as_ref().filter(|item| !item.trim().is_empty()) {
+            if let Some(problem) = parsed
+                .problem
+                .as_ref()
+                .filter(|item| !item.trim().is_empty())
+            {
                 session.proof.problem = Some(problem.trim().to_string());
             }
             if let Some(formal_target) = parsed
@@ -67,8 +71,7 @@ impl AppState {
                 session.proof.paper_tex = tex.clone();
             }
             if let Some(question) = parsed.question.clone() {
-                session.proof.status_line =
-                    format!("Awaiting clarification: {}", question.prompt);
+                session.proof.status_line = format!("Awaiting clarification: {}", question.prompt);
                 session.proof.phase = "formalizing".to_string();
                 session.proof.pending_question = Some(question);
                 session.proof.awaiting_clarification = true;
@@ -76,7 +79,8 @@ impl AppState {
             for created in &parsed.created_nodes {
                 // Sub-lemmas are children of the current active node
                 let parent = session.proof.active_node_id.clone();
-                let depth = parent.as_deref()
+                let depth = parent
+                    .as_deref()
                     .and_then(|pid| session.proof.nodes.iter().find(|n| n.id == pid))
                     .map(|p| p.depth + 1)
                     .unwrap_or(0);
@@ -392,10 +396,13 @@ impl AppState {
             }
             // Add a visible notice to the main transcript so the user sees branch activity
             let role_label = crate::helpers::agent_role_label(
-                session.proof.branches.iter()
+                session
+                    .proof
+                    .branches
+                    .iter()
                     .find(|b| b.id == branch_id)
                     .map(|b| b.role)
-                    .unwrap_or(openproof_protocol::AgentRole::Prover)
+                    .unwrap_or(openproof_protocol::AgentRole::Prover),
             );
             let notice_content = match status {
                 AgentStatus::Done => format!("{role_label}: {summary}"),
@@ -480,14 +487,20 @@ impl AppState {
         // Push to session activity log
         let activity_msg = self.activity_label.clone();
         if let Some(session) = self.current_session_mut() {
-            session.proof.activity_log.push(openproof_protocol::ActivityEntry {
-                timestamp: Utc::now().to_rfc3339(),
-                kind: "tool".to_string(),
-                message: activity_msg,
-            });
+            session
+                .proof
+                .activity_log
+                .push(openproof_protocol::ActivityEntry {
+                    timestamp: Utc::now().to_rfc3339(),
+                    kind: "tool".to_string(),
+                    message: activity_msg,
+                });
             // Cap at 50 entries
             if session.proof.activity_log.len() > 50 {
-                session.proof.activity_log.drain(..session.proof.activity_log.len() - 50);
+                session
+                    .proof
+                    .activity_log
+                    .drain(..session.proof.activity_log.len() - 50);
             }
         }
         let entry = TranscriptEntry {

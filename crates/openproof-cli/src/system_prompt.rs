@@ -308,9 +308,16 @@ pub async fn retrieval_context(store: &AppStore, session: Option<&SessionSnapsho
     let mut corpus_hits: Vec<(String, String, String)> = Vec::new();
     if session.cloud.share_mode != ShareMode::Local {
         let client = openproof_cloud::CloudCorpusClient::new(Default::default());
-        if let Ok(remote) = client.search_verified_remote(&query, 10, session.cloud.share_mode, None).await {
+        if let Ok(remote) = client
+            .search_verified_remote(&query, 10, session.cloud.share_mode, None)
+            .await
+        {
             for hit in &remote {
-                corpus_hits.push((hit.label.clone(), hit.statement.clone(), "cloud".to_string()));
+                corpus_hits.push((
+                    hit.label.clone(),
+                    hit.statement.clone(),
+                    "cloud".to_string(),
+                ));
             }
         }
     }
@@ -365,7 +372,10 @@ pub async fn retrieval_context(store: &AppStore, session: Option<&SessionSnapsho
                     "Semantically similar verified lemmas:\n{}",
                     new_hits
                         .iter()
-                        .map(|h| format!("- {} (similarity: {:.2}) :: {}", h.label, h.score, h.statement))
+                        .map(|h| format!(
+                            "- {} (similarity: {:.2}) :: {}",
+                            h.label, h.score, h.statement
+                        ))
                         .collect::<Vec<_>>()
                         .join("\n")
                 ));
@@ -404,8 +414,11 @@ pub fn transcript_entry_to_turn_message(
         MessageRole::User => "user",
         MessageRole::Assistant => "assistant",
         MessageRole::System => "system",
-        MessageRole::Notice | MessageRole::ToolCall | MessageRole::ToolResult
-        | MessageRole::Diff | MessageRole::Thought => return None,
+        MessageRole::Notice
+        | MessageRole::ToolCall
+        | MessageRole::ToolResult
+        | MessageRole::Diff
+        | MessageRole::Thought => return None,
     };
     Some(TurnMessage::chat(role, entry.content))
 }
@@ -497,26 +510,33 @@ pub async fn build_branch_turn_messages(
             },
         ]
         .join("\n\n"))];
-    messages.push(TurnMessage::chat("user", format!(
+    messages.push(TurnMessage::chat(
+        "user",
+        format!(
             "Continue the branch task now.\nRole: {}\nTask: {}",
             agent_role_label(role),
             title
-        )));
+        ),
+    ));
 
     // Include ALL workspace .lean files so branches see current codebase
     if let Ok(files) = store.list_workspace_files(&session.id) {
         let ws_dir = store.workspace_dir(&session.id);
-        let lean_files: Vec<_> = files.iter()
+        let lean_files: Vec<_> = files
+            .iter()
             .filter(|(p, _)| p.ends_with(".lean") && !p.contains("history/"))
             .collect();
         if !lean_files.is_empty() {
             for (path, _) in &lean_files {
                 if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
                     if !content.trim().is_empty() && content.lines().count() <= 200 {
-                        messages.push(TurnMessage::chat("user", format!(
-                            "File: {path} ({} lines):\n```lean\n{content}\n```",
-                            content.lines().count()
-                        )));
+                        messages.push(TurnMessage::chat(
+                            "user",
+                            format!(
+                                "File: {path} ({} lines):\n```lean\n{content}\n```",
+                                content.lines().count()
+                            ),
+                        ));
                     }
                 }
             }
@@ -527,14 +547,17 @@ pub async fn build_branch_turn_messages(
     }
 
     // Include active node status so branches know verification state
-    if let Some(node) = session.proof.nodes.iter()
+    if let Some(node) = session
+        .proof
+        .nodes
+        .iter()
         .find(|n| Some(n.id.as_str()) == session.proof.active_node_id.as_deref())
     {
         if !node.content.trim().is_empty() {
-            messages.push(TurnMessage::chat("user", format!(
-                "Active node '{}' status: {:?}",
-                node.label, node.status
-            )));
+            messages.push(TurnMessage::chat(
+                "user",
+                format!("Active node '{}' status: {:?}", node.label, node.status),
+            ));
         }
     }
 

@@ -7,9 +7,8 @@
 //! `autonomous_headless.rs`.
 
 use crate::helpers::{
-    autonomous_stop_reason_with_mode, best_hidden_branch,
-    current_foreground_branch, persist_current_session, persist_write,
-    should_promote_hidden_branch,
+    autonomous_stop_reason_with_mode, best_hidden_branch, current_foreground_branch,
+    persist_current_session, persist_write, should_promote_hidden_branch,
 };
 use crate::turn_handling::{
     ensure_hidden_agent_branch, start_agent_branch_turn, start_branch_verification,
@@ -47,7 +46,8 @@ pub fn schedule_autonomous_tick(
     {
         return;
     }
-    if let Some(reason) = autonomous_stop_reason_with_mode(&session, session.proof.full_autonomous) {
+    if let Some(reason) = autonomous_stop_reason_with_mode(&session, session.proof.full_autonomous)
+    {
         if let Ok(write) = state.set_autonomous_run_state(AutonomousRunPatch {
             is_autonomous_running: Some(false),
             autonomous_pause_reason: Some(Some(reason.clone())),
@@ -83,14 +83,19 @@ pub fn run_autonomous_step(
     // Cycle active_node_id to the next unverified root-level node.
     // This ensures multi-theorem sessions work on each theorem in turn.
     if let Some(s) = state.current_session_mut() {
-        let current_verified = s.proof.active_node_id.as_deref()
+        let current_verified = s
+            .proof
+            .active_node_id
+            .as_deref()
             .and_then(|id| s.proof.nodes.iter().find(|n| n.id == id))
             .map(|n| n.status == openproof_protocol::ProofNodeStatus::Verified)
             .unwrap_or(true); // treat None as "needs cycling"
         if current_verified || s.proof.active_node_id.is_none() {
-            if let Some(next) = s.proof.nodes.iter().find(|n| {
-                n.depth == 0 && n.status != openproof_protocol::ProofNodeStatus::Verified
-            }) {
+            if let Some(next) =
+                s.proof.nodes.iter().find(|n| {
+                    n.depth == 0 && n.status != openproof_protocol::ProofNodeStatus::Verified
+                })
+            {
                 eprintln!("[auto] Cycling to unverified root: {}", next.label);
                 s.proof.active_node_id = Some(next.id.clone());
             }
@@ -98,11 +103,15 @@ pub fn run_autonomous_step(
     }
 
     // Derive target from active node's statement, with fallback for backward compat
-    let active_node = state.current_session()
-        .and_then(|s| s.proof.active_node_id.as_deref()
+    let active_node = state.current_session().and_then(|s| {
+        s.proof
+            .active_node_id
+            .as_deref()
             .and_then(|id| s.proof.nodes.iter().find(|n| n.id == id))
-            .cloned());
-    let target = active_node.as_ref()
+            .cloned()
+    });
+    let target = active_node
+        .as_ref()
         .filter(|n| !n.statement.trim().is_empty())
         .map(|n| n.statement.clone())
         .or_else(|| session.proof.accepted_target.clone())
@@ -112,7 +121,11 @@ pub fn run_autonomous_step(
         })?;
 
     // Ensure active_node_id is set (creates a node if none exist)
-    if state.current_session().map(|s| s.proof.active_node_id.is_none()).unwrap_or(false) {
+    if state
+        .current_session()
+        .map(|s| s.proof.active_node_id.is_none())
+        .unwrap_or(false)
+    {
         if let Some(s) = state.current_session_mut() {
             if let Some(first) = s.proof.nodes.first() {
                 s.proof.active_node_id = Some(first.id.clone());
@@ -139,7 +152,11 @@ pub fn run_autonomous_step(
         }
         // Persist the fix
         if let Some(session) = state.current_session().cloned() {
-            persist_write(tx.clone(), store.clone(), openproof_core::PendingWrite { session });
+            persist_write(
+                tx.clone(),
+                store.clone(),
+                openproof_core::PendingWrite { session },
+            );
         }
     }
 
@@ -210,7 +227,9 @@ pub fn run_autonomous_step(
         if let Some(s) = state.current_session_mut() {
             s.proof.active_node_id = Some(unode_id);
         }
-        let verification_session = state.current_session().cloned()
+        let verification_session = state
+            .current_session()
+            .cloned()
             .ok_or_else(|| "No active session.".to_string())?;
         if let Some(write) = state.apply(AppEvent::LeanVerifyStarted) {
             persist_write(tx.clone(), store.clone(), write);
@@ -348,21 +367,29 @@ pub fn run_autonomous_step(
                 &basis.diagnostics,
             );
             if !grounding.is_empty() {
-                backtrack_context.push_str("\n\nLean DID find these correct facts -- use them even in the new approach:\n");
+                backtrack_context.push_str(
+                    "\n\nLean DID find these correct facts -- use them even in the new approach:\n",
+                );
                 for fact in &grounding {
                     backtrack_context.push_str(&format!("  {fact}\n"));
                 }
             }
 
             // Include failed path history
-            let target_label = latest_session.proof.nodes.first()
+            let target_label = latest_session
+                .proof
+                .nodes
+                .first()
                 .map(|n| n.label.as_str())
                 .unwrap_or(&latest_session.title);
             if let Ok(failed) = store.failed_attempts_for_target(target_label, 5) {
                 if !failed.is_empty() {
-                    backtrack_context.push_str("\n\nAll previously failed approaches (do NOT repeat ANY of these):\n");
+                    backtrack_context.push_str(
+                        "\n\nAll previously failed approaches (do NOT repeat ANY of these):\n",
+                    );
                     for (class, snippet, diag) in &failed {
-                        backtrack_context.push_str(&format!("  [{class}] {snippet}\n    -> {diag}\n"));
+                        backtrack_context
+                            .push_str(&format!("  [{class}] {snippet}\n    -> {diag}\n"));
                     }
                 }
             }
@@ -399,9 +426,17 @@ pub fn run_autonomous_step(
         let mut repair_context = String::new();
 
         // Show current file with line numbers so the model can patch surgically
-        let current_content = latest_session.proof.last_rendered_scratch
+        let current_content = latest_session
+            .proof
+            .last_rendered_scratch
             .as_deref()
-            .or_else(|| latest_session.proof.nodes.first().map(|n| n.content.as_str()))
+            .or_else(|| {
+                latest_session
+                    .proof
+                    .nodes
+                    .first()
+                    .map(|n| n.content.as_str())
+            })
             .unwrap_or("");
         if !current_content.trim().is_empty() {
             repair_context.push_str("Current Scratch.lean:\n```\n");
@@ -420,7 +455,7 @@ pub fn run_autonomous_step(
                   context line\n\
                  *** End Patch\n\n\
                  Only change what's needed. Do NOT rewrite the entire file.\n\
-                 If you must rewrite, use a ```lean code block instead.\n\n"
+                 If you must rewrite, use a ```lean code block instead.\n\n",
             );
         }
 
@@ -447,7 +482,11 @@ pub fn run_autonomous_step(
             let project_dir = crate::helpers::resolve_lean_project_dir();
             let rendered = openproof_lean::render_node_scratch(
                 &latest_session,
-                latest_session.proof.nodes.first().unwrap_or(&openproof_protocol::ProofNode::default()),
+                latest_session
+                    .proof
+                    .nodes
+                    .first()
+                    .unwrap_or(&openproof_protocol::ProofNode::default()),
             );
             if let Ok(goals) = openproof_lean::extract_sorry_goals(&project_dir, &rendered) {
                 if !goals.is_empty() {
@@ -458,13 +497,15 @@ pub fn run_autonomous_step(
 
                     // Premise retrieval: search corpus for lemmas matching goal types
                     // This is done synchronously via FTS for now; vector search is async
-                    let goal_query = goals.iter()
+                    let goal_query = goals
+                        .iter()
                         .map(|(_, g)| g.as_str())
                         .collect::<Vec<_>>()
                         .join(" ");
                     if let Ok(premises) = store.search_verified_corpus(&goal_query, 5) {
                         if !premises.is_empty() {
-                            repair_context.push_str("\n\nRelevant verified premises from corpus:\n");
+                            repair_context
+                                .push_str("\n\nRelevant verified premises from corpus:\n");
                             for (label, statement, _vis) in &premises {
                                 repair_context.push_str(&format!("  {label} :: {statement}\n"));
                             }
@@ -474,9 +515,9 @@ pub fn run_autonomous_step(
             }
 
             if basis.attempt_count >= 2 {
-                if let Ok(suggestions) = openproof_lean::run_tactic_suggestions(
-                    &project_dir, &rendered, "exact?",
-                ) {
+                if let Ok(suggestions) =
+                    openproof_lean::run_tactic_suggestions(&project_dir, &rendered, "exact?")
+                {
                     if !suggestions.is_empty() {
                         repair_context.push_str("\n\nLean's own suggestions (via exact?):\n");
                         for s in suggestions.iter().take(5) {
@@ -488,7 +529,10 @@ pub fn run_autonomous_step(
         }
 
         // Failed path history
-        let target_label = latest_session.proof.nodes.first()
+        let target_label = latest_session
+            .proof
+            .nodes
+            .first()
             .map(|n| n.label.as_str())
             .unwrap_or(&latest_session.title);
         if let Ok(failed) = store.failed_attempts_for_target(target_label, 5) {
@@ -502,12 +546,11 @@ pub fn run_autonomous_step(
 
         // Spawn tactic search in parallel with the agentic repair (if strategy allows).
         let strategy = latest_session.proof.search_strategy;
-        if matches!(strategy, SearchStrategy::Hybrid | SearchStrategy::TacticSearch) {
-            spawn_tactic_search_for_sorrys(
-                tx.clone(),
-                &latest_session,
-                &store,
-            );
+        if matches!(
+            strategy,
+            SearchStrategy::Hybrid | SearchStrategy::TacticSearch
+        ) {
+            spawn_tactic_search_for_sorrys(tx.clone(), &latest_session, &store);
             if matches!(strategy, SearchStrategy::TacticSearch) {
                 // Pure tactic search mode: skip the agentic branch entirely.
                 actions.push("Started tactic search (pure mode, no agentic branch).".to_string());
@@ -541,7 +584,8 @@ pub fn run_autonomous_step(
         let mut ctx = String::new();
         // Show workspace files
         if let Ok(files) = store.list_workspace_files(&latest_session.id) {
-            let lean_files: Vec<_> = files.iter()
+            let lean_files: Vec<_> = files
+                .iter()
                 .filter(|(p, _)| p.ends_with(".lean") && !p.contains("history/"))
                 .collect();
             if !lean_files.is_empty() {
@@ -567,11 +611,19 @@ pub fn run_autonomous_step(
             }
         }
         // Strategy summary if available
-        if let Some(summary) = latest_session.proof.strategy_summary.as_ref().filter(|s| !s.trim().is_empty()) {
+        if let Some(summary) = latest_session
+            .proof
+            .strategy_summary
+            .as_ref()
+            .filter(|s| !s.trim().is_empty())
+        {
             ctx.push_str(&format!("Strategy: {summary}\n\n"));
         }
         // Include past failed attempts so branches don't repeat them
-        let target_label = latest_session.proof.nodes.first()
+        let target_label = latest_session
+            .proof
+            .nodes
+            .first()
             .map(|n| n.label.as_str())
             .unwrap_or(&latest_session.title);
         if let Ok(failed) = store.failed_attempts_for_target(target_label, 5) {
@@ -584,7 +636,10 @@ pub fn run_autonomous_step(
             }
         }
         // Related corpus items
-        if let Some(active) = latest_session.proof.active_node_id.as_deref()
+        if let Some(active) = latest_session
+            .proof
+            .active_node_id
+            .as_deref()
             .and_then(|id| latest_session.proof.nodes.iter().find(|n| n.id == id))
         {
             let item_key = format!("user-verified/{}/{}", latest_session.id, active.label);
@@ -605,7 +660,7 @@ pub fn run_autonomous_step(
              1. file_read to see current files with line numbers\n\
              2. file_patch to modify code (fill sorrys, fix errors)\n\
              3. lean_verify to check your changes compile\n\
-             Do NOT output code as text. Use file_patch tool.\n\n"
+             Do NOT output code as text. Use file_patch tool.\n\n",
         );
         ctx
     };
@@ -649,7 +704,8 @@ pub fn run_autonomous_step(
         .ok_or_else(|| "No active session.".to_string())?;
     let has_foreground = current_foreground_branch(Some(&latest_session)).is_some();
     if has_foreground {
-        let description = format!("{branch_context}Produce an alternate Lean proof candidate for {target}.");
+        let description =
+            format!("{branch_context}Produce an alternate Lean proof candidate for {target}.");
         let title = format!("{} search prover", latest_session.title);
         let (branch_id, session_snapshot) = ensure_hidden_agent_branch(
             tx.clone(),
@@ -851,7 +907,11 @@ pub async fn drain_until_settled(
             Ok(Some(event)) => {
                 let mut finished_branch_id: Option<String> = None;
                 match &event {
-                    AppEvent::AppendBranchAssistant { branch_id, content, used_tools } => {
+                    AppEvent::AppendBranchAssistant {
+                        branch_id,
+                        content,
+                        used_tools,
+                    } => {
                         let lean_count = content.matches("```lean").count();
                         eprintln!(
                             "[run] Branch {branch_id}: {len} chars, {lean_count} lean block(s), tools={used_tools}",
@@ -896,7 +956,10 @@ pub async fn drain_until_settled(
                         }
                     }
                     AppEvent::AppendNotice { title, content } => {
-                        eprintln!("[run] {title}: {}", content.chars().take(200).collect::<String>());
+                        eprintln!(
+                            "[run] {title}: {}",
+                            content.chars().take(200).collect::<String>()
+                        );
                     }
                     AppEvent::PersistSucceeded(_) | AppEvent::PersistFailed(_) => {}
                     _ => {}
@@ -927,10 +990,7 @@ pub async fn drain_until_settled(
                                     !hidden,
                                 );
                             } else {
-                                eprintln!(
-                                    "[run] Branch {} finished with no lean candidate.",
-                                    bid
-                                );
+                                eprintln!("[run] Branch {} finished with no lean candidate.", bid);
                             }
                         }
                     }
@@ -996,7 +1056,10 @@ fn spawn_tactic_search_for_sorrys(
     }
     // Fallback to node.content
     if full_content.trim().is_empty() {
-        full_content = session.proof.nodes.first()
+        full_content = session
+            .proof
+            .nodes
+            .first()
             .map(|n| n.content.clone())
             .unwrap_or_default();
     }
@@ -1016,12 +1079,35 @@ fn spawn_tactic_search_for_sorrys(
 
     // Standard tactics for the propose_fn callback (used as fallback)
     let standard_tactics: Vec<String> = vec![
-        "simp", "omega", "ring", "norm_num", "linarith", "aesop",
-        "grind", "decide", "trivial", "exact?", "apply?", "simp_all",
-        "tauto", "contradiction", "norm_cast", "positivity", "gcongr",
-        "polyrith", "field_simp", "push_cast", "ring_nf", "nlinarith",
-        "norm_num [*]", "simp [*]", "grind?",
-    ].into_iter().map(String::from).collect();
+        "simp",
+        "omega",
+        "ring",
+        "norm_num",
+        "linarith",
+        "aesop",
+        "grind",
+        "decide",
+        "trivial",
+        "exact?",
+        "apply?",
+        "simp_all",
+        "tauto",
+        "contradiction",
+        "norm_cast",
+        "positivity",
+        "gcongr",
+        "polyrith",
+        "field_simp",
+        "push_cast",
+        "ring_nf",
+        "nlinarith",
+        "norm_num [*]",
+        "simp [*]",
+        "grind?",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
 
     // Check if a prover model is configured and available via ollama
     let ollama_proposer = {
@@ -1072,7 +1158,9 @@ fn spawn_tactic_search_for_sorrys(
         let mut goals = Vec::new();
         for &(line, _col) in &sorry_positions {
             // Try to extract goal from Lean's error output
-            if let Ok((_, output)) = openproof_lean::tools::run_lean_verify_raw(&project_dir, &full_content) {
+            if let Ok((_, output)) =
+                openproof_lean::tools::run_lean_verify_raw(&project_dir, &full_content)
+            {
                 // Parse "unsolved goals" from output for this line
                 let goal = extract_goal_at_line(&output, line);
                 goals.push((line, goal));
@@ -1082,7 +1170,10 @@ fn spawn_tactic_search_for_sorrys(
         }
         goals
     } else {
-        sorry_positions.iter().map(|&(line, _)| (line, String::new())).collect()
+        sorry_positions
+            .iter()
+            .map(|&(line, _)| (line, String::new()))
+            .collect()
     };
 
     for (line, goal_type) in &sorry_goals {
@@ -1094,8 +1185,8 @@ fn spawn_tactic_search_for_sorrys(
         let store_for_propose = store.clone();
 
         let ollama = ollama_proposer.clone();
-        let propose_fn: openproof_search::search::ProposeFn = Box::new(
-            move |goal: &str, _context: &str, k: usize| {
+        let propose_fn: openproof_search::search::ProposeFn =
+            Box::new(move |goal: &str, _context: &str, k: usize| {
                 let mut candidates: Vec<String> = Vec::new();
 
                 // 1. Model-based tactics (if prover model available)
@@ -1130,8 +1221,7 @@ fn spawn_tactic_search_for_sorrys(
 
                 candidates.truncate(k);
                 Ok(candidates)
-            },
-        );
+            });
 
         // Prefer Pantograph path (3ms per tactic)
         if let Some(ref pg) = pantograph {
@@ -1139,9 +1229,16 @@ fn spawn_tactic_search_for_sorrys(
                 let pg = pg.clone();
                 let goal_type = goal_type.clone();
                 tokio::task::spawn_blocking(move || {
-                    eprintln!("[tactic-search] Pantograph search at line {line}: {}", &goal_type[..goal_type.len().min(60)]);
+                    eprintln!(
+                        "[tactic-search] Pantograph search at line {line}: {}",
+                        &goal_type[..goal_type.len().min(60)]
+                    );
                     match openproof_search::search::pantograph_best_first_search(
-                        &pg, &propose_fn, &goal_type, "", &config,
+                        &pg,
+                        &propose_fn,
+                        &goal_type,
+                        "",
+                        &config,
                     ) {
                         Ok(result) => emit_search_result(&tx, &node_id, line, result),
                         Err(e) => eprintln!("[tactic-search] Pantograph error at line {line}: {e}"),
@@ -1157,9 +1254,7 @@ fn spawn_tactic_search_for_sorrys(
             let scratch = scratch_path.clone();
             tokio::task::spawn_blocking(move || {
                 eprintln!("[tactic-search] LSP search at line {line}");
-                match best_first_search(
-                    &lsp, &propose_fn, &scratch, line, "", &config,
-                ) {
+                match best_first_search(&lsp, &propose_fn, &scratch, line, "", &config) {
                     Ok(result) => emit_search_result(&tx, &node_id, line, result),
                     Err(e) => eprintln!("[tactic-search] LSP error at line {line}: {e}"),
                 }
@@ -1185,7 +1280,10 @@ fn emit_search_result(
         openproof_search::config::SearchResult::Exhausted { .. } => "exhausted",
         openproof_search::config::SearchResult::Timeout { .. } => "timeout",
     };
-    eprintln!("[tactic-search] Line {line}: {status} (tactics: {})", tactics.join("; "));
+    eprintln!(
+        "[tactic-search] Line {line}: {status} (tactics: {})",
+        tactics.join("; ")
+    );
     let _ = tx.send(AppEvent::TacticSearchComplete {
         node_id: node_id.to_string(),
         sorry_line: line,

@@ -10,7 +10,9 @@
 //! - `slash_autonomous`: `/autonomous`, `/answer`, `/theorem`, `/lemma`, `/verify`
 
 use crate::export::{append_memory_entry, export_session_artifacts};
-use crate::helpers::{emit_local_notice, parse_agent_role, persist_write, resolve_lean_project_dir};
+use crate::helpers::{
+    emit_local_notice, parse_agent_role, persist_write, resolve_lean_project_dir,
+};
 use crate::slash_autonomous::{
     apply_statement_command, cmd_answer, cmd_autonomous, start_verify_active_node,
 };
@@ -89,8 +91,11 @@ pub fn apply_local_command(
             emit_local_notice(tx, state, store, "Tasks", state.tasks_report());
         }
         "/new" => {
-            let write =
-                state.create_session(if arg_text.is_empty() { None } else { Some(arg_text) });
+            let write = state.create_session(if arg_text.is_empty() {
+                None
+            } else {
+                Some(arg_text)
+            });
             persist_write(tx.clone(), store.clone(), write);
             emit_local_notice(
                 tx,
@@ -107,8 +112,11 @@ pub fn apply_local_command(
             );
         }
         "/clear" => {
-            let write =
-                state.create_session(if arg_text.is_empty() { None } else { Some(arg_text) });
+            let write = state.create_session(if arg_text.is_empty() {
+                None
+            } else {
+                Some(arg_text)
+            });
             persist_write(tx.clone(), store.clone(), write);
             emit_local_notice(
                 tx,
@@ -144,9 +152,7 @@ pub fn apply_local_command(
                                 .unwrap_or_else(|| arg_text.to_string())
                         ),
                     ),
-                    Err(error) => {
-                        emit_local_notice(tx, state, store, "Session Error", error)
-                    }
+                    Err(error) => emit_local_notice(tx, state, store, "Session Error", error),
                 }
             }
         }
@@ -165,10 +171,8 @@ pub fn apply_local_command(
                         "No focusable targets (no nodes or branches).".to_string(),
                     );
                 } else {
-                    state.overlay = Some(openproof_core::Overlay::FocusPicker {
-                        items,
-                        selected: 0,
-                    });
+                    state.overlay =
+                        Some(openproof_core::Overlay::FocusPicker { items, selected: 0 });
                 }
             } else if arg_text == "clear" {
                 match state.focus_target(None) {
@@ -273,7 +277,10 @@ pub fn apply_local_command(
                     format!("History: {} files", history.len()),
                 ];
                 if let Some(v) = verification {
-                    lines.push(format!("Last check: {}", if v.ok { "OK" } else { "FAILED" }));
+                    lines.push(format!(
+                        "Last check: {}",
+                        if v.ok { "OK" } else { "FAILED" }
+                    ));
                     if !v.ok {
                         for line in v.stderr.lines().take(3) {
                             lines.push(format!("  {line}"));
@@ -303,11 +310,7 @@ pub fn apply_local_command(
                             state,
                             store.clone(),
                             "Paper",
-                            format!(
-                                "{}\n\nWritten to: {}",
-                                state.paper_report(),
-                                path.display()
-                            ),
+                            format!("{}\n\nWritten to: {}", state.paper_report(), path.display()),
                         );
                     } else {
                         emit_local_notice(tx, state, store, "Paper", state.paper_report());

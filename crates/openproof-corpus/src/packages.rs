@@ -196,7 +196,10 @@ pub fn environment_fingerprint(
     manifest_text: &str,
     packages: &[PackageSeedInfo],
 ) -> String {
-    let mut parts = vec![lean_project_dir.trim().to_string(), manifest_text.trim().to_string()];
+    let mut parts = vec![
+        lean_project_dir.trim().to_string(),
+        manifest_text.trim().to_string(),
+    ];
     let mut pkg_parts: Vec<String> = packages
         .iter()
         .flat_map(|pkg| {

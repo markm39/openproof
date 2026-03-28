@@ -24,7 +24,11 @@ pub fn cmd_share(
                     format!("Share mode: {}", share_mode_label(session.cloud.share_mode)),
                     format!(
                         "Sync enabled: {}",
-                        if session.cloud.sync_enabled { "yes" } else { "no" }
+                        if session.cloud.sync_enabled {
+                            "yes"
+                        } else {
+                            "no"
+                        }
                     ),
                     format!(
                         "Private overlay community: {}",
@@ -155,9 +159,7 @@ pub fn cmd_corpus(
                 ]
                 .join("\n"),
             ),
-            Err(error) => {
-                emit_local_notice(tx, state, store, "Corpus Error", error.to_string())
-            }
+            Err(error) => emit_local_notice(tx, state, store, "Corpus Error", error.to_string()),
         },
         "search" => {
             if rest.is_empty() {
@@ -221,9 +223,7 @@ pub fn cmd_corpus(
                         } else {
                             results
                                 .into_iter()
-                                .map(|(package, count)| {
-                                    format!("{package}: {count} declarations")
-                                })
+                                .map(|(package, count)| format!("{package}: {count} declarations"))
                                 .collect::<Vec<_>>()
                                 .join("\n")
                         };
@@ -279,7 +279,11 @@ pub fn cmd_sync(
     store: AppStore,
     arg_text: &str,
 ) {
-    let subcommand = if arg_text.is_empty() { "status" } else { arg_text };
+    let subcommand = if arg_text.is_empty() {
+        "status"
+    } else {
+        arg_text
+    };
     match subcommand {
         "status" => match store.get_sync_summary() {
             Ok(summary) => {
@@ -290,7 +294,11 @@ pub fn cmd_sync(
                             format!("Share mode: {}", share_mode_label(session.cloud.share_mode)),
                             format!(
                                 "Sync enabled: {}",
-                                if session.cloud.sync_enabled { "yes" } else { "no" }
+                                if session.cloud.sync_enabled {
+                                    "yes"
+                                } else {
+                                    "no"
+                                }
                             ),
                             format!("Pending jobs: {}", summary.pending_count),
                             format!("Failed jobs: {}", summary.failed_count),
@@ -357,7 +365,13 @@ pub fn start_sync_drain(
     store: AppStore,
 ) {
     let Some(session) = state.current_session().cloned() else {
-        emit_local_notice(tx, state, store, "Sync Error", "No active session.".to_string());
+        emit_local_notice(
+            tx,
+            state,
+            store,
+            "Sync Error",
+            "No active session.".to_string(),
+        );
         return;
     };
     if !session.cloud.sync_enabled {
@@ -394,7 +408,10 @@ pub fn start_sync_drain(
     let sync_enabled = session.cloud.sync_enabled;
     tokio::spawn(async move {
         let corpus = openproof_corpus::CorpusManager::new(store, cloud_client, PathBuf::from("."));
-        match corpus.drain_sync_queue(share_mode, sync_enabled, None).await {
+        match corpus
+            .drain_sync_queue(share_mode, sync_enabled, None)
+            .await
+        {
             Ok(result) => {
                 if result.sent > 0 {
                     let _ = tx.send(AppEvent::SyncCompleted);

@@ -62,7 +62,10 @@ pub fn build_corpus_module(
         }
         // Check first declaration keyword
         let first_word = clean.split_whitespace().next().unwrap_or("");
-        if !matches!(first_word, "theorem" | "lemma" | "def" | "noncomputable" | "instance" | "abbrev" | "set_option") {
+        if !matches!(
+            first_word,
+            "theorem" | "lemma" | "def" | "noncomputable" | "instance" | "abbrev" | "set_option"
+        ) {
             continue;
         }
         // Split into individual declaration blocks and dedup each
@@ -70,7 +73,9 @@ pub fn build_corpus_module(
         let mut new_blocks = Vec::new();
         for block in &blocks {
             let block = block.trim();
-            if block.is_empty() { continue; }
+            if block.is_empty() {
+                continue;
+            }
             if let Some(name) = extract_decl_name(block) {
                 if seen_decl_names.contains(name) {
                     continue;
@@ -104,15 +109,11 @@ pub fn build_corpus_module(
     }
 
     // Write new Corpus.lean
-    std::fs::create_dir_all(corpus_path.parent().unwrap())
-        .context("creating OpenProof dir")?;
-    std::fs::write(&corpus_path, &content)
-        .context("writing OpenProof/Corpus.lean")?;
+    std::fs::create_dir_all(corpus_path.parent().unwrap()).context("creating OpenProof dir")?;
+    std::fs::write(&corpus_path, &content).context("writing OpenProof/Corpus.lean")?;
 
     // Compile with lake build
-    eprintln!(
-        "[corpus-module] Building OpenProof.Corpus ({decl_count} declarations)..."
-    );
+    eprintln!("[corpus-module] Building OpenProof.Corpus ({decl_count} declarations)...");
     let output = std::process::Command::new("lake")
         .arg("build")
         .arg("OpenProof.Corpus")
@@ -146,7 +147,9 @@ fn extract_decl_name(block: &str) -> Option<&str> {
     ];
     for prefix in &prefixes {
         if let Some(rest) = first_line.trim().strip_prefix(prefix) {
-            return rest.split(|c: char| !c.is_alphanumeric() && c != '_').next();
+            return rest
+                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                .next();
         }
     }
     None

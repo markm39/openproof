@@ -70,10 +70,12 @@ pub fn run_tactic_suggestions(
 ) -> Result<Vec<String>> {
     // Replace the first `sorry` with the search tactic
     let modified = if let Some(pos) = content.find("sorry") {
-        format!("{}{}{}",
+        format!(
+            "{}{}{}",
             &content[..pos],
             tactic,
-            &content[pos + "sorry".len()..])
+            &content[pos + "sorry".len()..]
+        )
     } else {
         format!("{content}\n#check {tactic}")
     };
@@ -96,7 +98,10 @@ pub fn run_tactic_suggestions(
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("Try this:") {
             suggestions.push(rest.trim().to_string());
-        } else if trimmed.starts_with("[exact]") || trimmed.starts_with("[apply]") || trimmed.starts_with("[rw]") {
+        } else if trimmed.starts_with("[exact]")
+            || trimmed.starts_with("[apply]")
+            || trimmed.starts_with("[rw]")
+        {
             if let Some(pos) = trimmed.find(']') {
                 suggestions.push(trimmed[pos + 1..].trim().to_string());
             }
@@ -131,15 +136,20 @@ pub fn extract_grounding_from_lean_output(stderr: &str, stdout: &str) -> Vec<Str
         if let Some(rest) = trimmed.strip_prefix("Try this:") {
             facts.push(format!("LEAN SUGGESTS: {}", rest.trim()));
         }
-        if trimmed.starts_with("[exact]") || trimmed.starts_with("[apply]") || trimmed.starts_with("[rw]") {
+        if trimmed.starts_with("[exact]")
+            || trimmed.starts_with("[apply]")
+            || trimmed.starts_with("[rw]")
+        {
             if let Some(pos) = trimmed.find(']') {
                 facts.push(format!("LEAN SUGGESTS: {}", trimmed[pos + 1..].trim()));
             }
         }
         // Type signatures from #check
         if trimmed.contains(" : ") && !trimmed.contains("error") && !trimmed.starts_with('/') {
-            let has_known_pattern = trimmed.contains('\u{2192}') || trimmed.contains('\u{2200}')
-                || trimmed.contains('\u{2203}') || trimmed.contains("Prop")
+            let has_known_pattern = trimmed.contains('\u{2192}')
+                || trimmed.contains('\u{2200}')
+                || trimmed.contains('\u{2203}')
+                || trimmed.contains("Prop")
                 || (trimmed.contains("(") && trimmed.contains(":"));
             if has_known_pattern && trimmed.len() > 10 && trimmed.len() < 500 {
                 facts.push(format!("LEAN REPORTS: {trimmed}"));

@@ -39,12 +39,20 @@ pub fn render_node_scratch(session: &SessionSnapshot, node: &ProofNode) -> Strin
         if sibling_content.is_empty() {
             continue;
         }
-        lines.push(format!("-- openproof: {} :: {}", escape_comment(&sibling.label), escape_comment(&sibling.statement)));
+        lines.push(format!(
+            "-- openproof: {} :: {}",
+            escape_comment(&sibling.label),
+            escape_comment(&sibling.statement)
+        ));
         lines.push(sibling_content.to_string());
         lines.push(String::new());
     }
 
-    lines.push(format!("-- openproof: {} :: {}", escape_comment(&node.label), escape_comment(&node.statement)));
+    lines.push(format!(
+        "-- openproof: {} :: {}",
+        escape_comment(&node.label),
+        escape_comment(&node.statement)
+    ));
     lines.push(String::new());
     lines.push(content.to_string());
     lines.join("\n")

@@ -78,7 +78,12 @@ impl AppStore {
     /// Write the Scratch.lean file for a session.
     /// Archives the previous version to history/NNN_attempt.lean first.
     /// Write a patch diff alongside the attempt archive.
-    pub fn write_patch_diff(&self, session_id: &str, attempt_number: usize, diff: &str) -> Result<()> {
+    pub fn write_patch_diff(
+        &self,
+        session_id: &str,
+        attempt_number: usize,
+        diff: &str,
+    ) -> Result<()> {
         let dir = self.session_dir(session_id)?;
         let history_dir = dir.join("history");
         let diff_path = history_dir.join(format!("{:03}_patch.diff", attempt_number));
@@ -97,11 +102,7 @@ impl AppStore {
             .map(|entries| {
                 entries
                     .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.file_name()
-                            .to_string_lossy()
-                            .ends_with("_attempt.lean")
-                    })
+                    .filter(|e| e.file_name().to_string_lossy().ends_with("_attempt.lean"))
                     .collect()
             })
             .unwrap_or_default();
@@ -129,7 +130,11 @@ impl AppStore {
 
     /// Read the current Scratch.lean content for a session.
     pub fn read_scratch(&self, session_id: &str) -> Option<String> {
-        let path = self.paths.sessions_dir.join(session_id).join("Scratch.lean");
+        let path = self
+            .paths
+            .sessions_dir
+            .join(session_id)
+            .join("Scratch.lean");
         fs::read_to_string(path).ok()
     }
 
@@ -168,11 +173,7 @@ impl AppStore {
         Ok(files)
     }
 
-    fn walk_workspace(
-        base: &Path,
-        current: &Path,
-        out: &mut Vec<(String, u64)>,
-    ) -> Result<()> {
+    fn walk_workspace(base: &Path, current: &Path, out: &mut Vec<(String, u64)>) -> Result<()> {
         let entries = fs::read_dir(current)
             .with_context(|| format!("reading workspace dir {}", current.display()))?;
         for entry in entries {
@@ -180,7 +181,8 @@ impl AppStore {
             let path = entry.path();
             // Skip the history directory.
             if path.is_dir() {
-                let name = path.file_name()
+                let name = path
+                    .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 // Skip build artifacts, history, hidden dirs, and package dirs

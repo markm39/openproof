@@ -185,8 +185,7 @@ pub fn make_model_propose_fn(
         }
 
         // Fill remaining slots with standard tactics
-        let mut seen: std::collections::HashSet<String> =
-            candidates.iter().cloned().collect();
+        let mut seen: std::collections::HashSet<String> = candidates.iter().cloned().collect();
         for t in &fallback_tactics {
             if candidates.len() >= k {
                 break;
@@ -219,23 +218,20 @@ mod tests {
     #[test]
     fn test_filter_tactic_banned_substrings() {
         assert_eq!(filter_tactic("rcases h with ?_ | ?_"), None);
-        assert_eq!(filter_tactic("rcases h with h1 | h2"), Some("rcases h with h1 | h2".to_string()));
+        assert_eq!(
+            filter_tactic("rcases h with h1 | h2"),
+            Some("rcases h with h1 | h2".to_string())
+        );
     }
 
     #[test]
     fn test_filter_tactic_multiline() {
         // Model might generate multi-line; take only first line
-        assert_eq!(
-            filter_tactic("ring\n  -- done"),
-            Some("ring".to_string())
-        );
+        assert_eq!(filter_tactic("ring\n  -- done"), Some("ring".to_string()));
     }
 
     #[test]
     fn test_filter_tactic_separator() {
-        assert_eq!(
-            filter_tactic("omega:::"),
-            Some("omega".to_string())
-        );
+        assert_eq!(filter_tactic("omega:::"), Some("omega".to_string()));
     }
 }

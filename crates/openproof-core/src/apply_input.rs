@@ -69,7 +69,10 @@ impl AppState {
 
     pub(crate) fn apply_delete_forward(&mut self) {
         if self.focus == FocusPane::Composer && self.composer_cursor < self.composer.len() {
-            let deleted_char = self.composer[self.composer_cursor..].chars().next().unwrap();
+            let deleted_char = self.composer[self.composer_cursor..]
+                .chars()
+                .next()
+                .unwrap();
             if deleted_char == PASTE_MARKER {
                 let marker_index = self.composer[..self.composer_cursor]
                     .chars()

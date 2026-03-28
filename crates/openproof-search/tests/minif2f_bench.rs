@@ -53,7 +53,9 @@ fn extract_type_expr(content: &str) -> Option<String> {
         }
         if in_theorem {
             theorem_lines.push(line);
-            if trimmed.contains(":= by sorry") || trimmed.contains(":= by") && trimmed.contains("sorry") {
+            if trimmed.contains(":= by sorry")
+                || trimmed.contains(":= by") && trimmed.contains("sorry")
+            {
                 break;
             }
         }
@@ -74,7 +76,9 @@ fn extract_type_expr(content: &str) -> Option<String> {
         // Skip the name (first word after "theorem")
         let rest = &theorem_block[idx..];
         // The name ends at first space or newline or (
-        let name_end = rest.find(|c: char| c.is_whitespace() || c == '(').unwrap_or(rest.len());
+        let name_end = rest
+            .find(|c: char| c.is_whitespace() || c == '(')
+            .unwrap_or(rest.len());
         rest[name_end..].trim()
     } else {
         return None;
@@ -129,11 +133,31 @@ fn extract_type_expr(content: &str) -> Option<String> {
 
 fn standard_tactics() -> Vec<String> {
     vec![
-        "simp", "omega", "ring", "norm_num", "linarith", "aesop",
-        "grind", "decide", "trivial", "exact?", "apply?", "simp_all",
-        "tauto", "contradiction", "norm_cast", "positivity", "gcongr",
-        "polyrith", "field_simp", "push_cast", "ring_nf", "nlinarith",
-        "norm_num [*]", "simp [*]", "grind?",
+        "simp",
+        "omega",
+        "ring",
+        "norm_num",
+        "linarith",
+        "aesop",
+        "grind",
+        "decide",
+        "trivial",
+        "exact?",
+        "apply?",
+        "simp_all",
+        "tauto",
+        "contradiction",
+        "norm_cast",
+        "positivity",
+        "gcongr",
+        "polyrith",
+        "field_simp",
+        "push_cast",
+        "ring_nf",
+        "nlinarith",
+        "norm_num [*]",
+        "simp [*]",
+        "grind?",
     ]
     .into_iter()
     .map(String::from)
@@ -141,9 +165,7 @@ fn standard_tactics() -> Vec<String> {
 }
 
 fn make_propose_fn(tactics: Vec<String>) -> ProposeFn {
-    Box::new(move |_goal: &str, _ctx: &str, k: usize| {
-        Ok(tactics.iter().take(k).cloned().collect())
-    })
+    Box::new(move |_goal: &str, _ctx: &str, k: usize| Ok(tactics.iter().take(k).cloned().collect()))
 }
 
 #[test]
@@ -254,17 +276,33 @@ fn minif2f_tactic_search_benchmark() {
                 solved_problems.push((name.clone(), tactics.clone(), elapsed.as_secs_f64()));
                 format!("SOLVED  {:.2}s  {:?}", elapsed.as_secs_f64(), tactics)
             }
-            Ok(Ok(SearchResult::Partial { remaining_goals, .. })) => {
+            Ok(Ok(SearchResult::Partial {
+                remaining_goals, ..
+            })) => {
                 failed += 1;
-                format!("PARTIAL {:.2}s  {} goals remain", elapsed.as_secs_f64(), remaining_goals)
+                format!(
+                    "PARTIAL {:.2}s  {} goals remain",
+                    elapsed.as_secs_f64(),
+                    remaining_goals
+                )
             }
             Ok(Ok(SearchResult::Exhausted { expansions })) => {
                 failed += 1;
-                format!("EXHAUST {:.2}s  {} expansions", elapsed.as_secs_f64(), expansions)
+                format!(
+                    "EXHAUST {:.2}s  {} expansions",
+                    elapsed.as_secs_f64(),
+                    expansions
+                )
             }
-            Ok(Ok(SearchResult::Timeout { remaining_goals, .. })) => {
+            Ok(Ok(SearchResult::Timeout {
+                remaining_goals, ..
+            })) => {
                 failed += 1;
-                format!("TIMEOUT {:.2}s  {} goals remain", elapsed.as_secs_f64(), remaining_goals)
+                format!(
+                    "TIMEOUT {:.2}s  {} goals remain",
+                    elapsed.as_secs_f64(),
+                    remaining_goals
+                )
             }
             Ok(Err(e)) => {
                 errored += 1;
@@ -285,11 +323,18 @@ fn minif2f_tactic_search_benchmark() {
     println!("RESULTS");
     println!("========================================");
     println!("Total:    {}", total);
-    println!("Solved:   {} ({:.1}%)", solved, 100.0 * solved as f64 / total as f64);
+    println!(
+        "Solved:   {} ({:.1}%)",
+        solved,
+        100.0 * solved as f64 / total as f64
+    );
     println!("Failed:   {}", failed);
     println!("Errors:   {}", errored);
     println!("Wall time: {:.1}s", wall_time.as_secs_f64());
-    println!("Avg time:  {:.2}s/problem", total_time.as_secs_f64() / total as f64);
+    println!(
+        "Avg time:  {:.2}s/problem",
+        total_time.as_secs_f64() / total as f64
+    );
 
     if !solved_problems.is_empty() {
         println!("\n--- Solved Problems ---");
@@ -298,5 +343,10 @@ fn minif2f_tactic_search_benchmark() {
         }
     }
 
-    println!("\npass@1 = {:.1}% ({}/{})", 100.0 * solved as f64 / total as f64, solved, total);
+    println!(
+        "\npass@1 = {:.1}% ({}/{})",
+        100.0 * solved as f64 / total as f64,
+        solved,
+        total
+    );
 }

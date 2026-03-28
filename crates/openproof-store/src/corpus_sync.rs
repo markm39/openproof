@@ -460,9 +460,7 @@ impl AppStore {
     /// Get items by domain tag.
     pub fn items_by_tag(&self, tag: &str, limit: usize) -> Result<Vec<String>> {
         let conn = self.connect()?;
-        let mut stmt = conn.prepare(
-            "SELECT item_key FROM corpus_tags WHERE tag = ? LIMIT ?",
-        )?;
+        let mut stmt = conn.prepare("SELECT item_key FROM corpus_tags WHERE tag = ? LIMIT ?")?;
         let rows = stmt.query_map(rusqlite::params![tag, limit as i64], |row| row.get(0))?;
         let mut results = Vec::new();
         for row in rows {
@@ -475,12 +473,30 @@ impl AppStore {
     pub fn auto_tag_from_module(&self, item_key: &str, module_name: &str) -> Result<()> {
         let lower = module_name.to_lowercase();
         let tags: Vec<&str> = [
-            ("algebra", &["algebra", "group", "ring", "field", "module", "linear"][..]),
-            ("topology", &["topology", "topological", "metric", "continuous"]),
-            ("analysis", &["analysis", "measure", "integral", "derivative", "limit"]),
-            ("number_theory", &["number", "prime", "divisib", "factorial", "modular", "zmod"]),
-            ("combinatorics", &["combinat", "finset", "card", "pigeonhole", "ramsey"]),
-            ("geometry", &["geometry", "euclid", "triangle", "circle", "angle"]),
+            (
+                "algebra",
+                &["algebra", "group", "ring", "field", "module", "linear"][..],
+            ),
+            (
+                "topology",
+                &["topology", "topological", "metric", "continuous"],
+            ),
+            (
+                "analysis",
+                &["analysis", "measure", "integral", "derivative", "limit"],
+            ),
+            (
+                "number_theory",
+                &["number", "prime", "divisib", "factorial", "modular", "zmod"],
+            ),
+            (
+                "combinatorics",
+                &["combinat", "finset", "card", "pigeonhole", "ramsey"],
+            ),
+            (
+                "geometry",
+                &["geometry", "euclid", "triangle", "circle", "angle"],
+            ),
             ("logic", &["logic", "propositional", "decidab", "classical"]),
             ("order", &["order", "lattice", "partial", "total"]),
             ("category", &["category", "functor", "natural", "monad"]),

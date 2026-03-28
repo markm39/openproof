@@ -5,10 +5,7 @@
 //! `run_autonomous_step`) live in `autonomous.rs`.
 
 use crate::autonomous::{drain_until_settled, run_autonomous_step};
-use crate::helpers::{
-    extract_lean_blocks_from_text, persist_write,
-    resolve_lean_project_dir,
-};
+use crate::helpers::{extract_lean_blocks_from_text, persist_write, resolve_lean_project_dir};
 use crate::system_prompt::build_turn_messages_with_retrieval;
 use crate::turn_handling::run_agentic_loop;
 use anyhow::{bail, Result};
@@ -48,7 +45,10 @@ pub async fn run_autonomous(
         // Reset phase so autonomous loop doesn't stop immediately
         if let Some(s) = state.current_session_mut() {
             if s.proof.phase == "done" || s.proof.phase == "blocked" {
-                eprintln!("[run] Resetting phase from '{}' to 'proving' for continuation", s.proof.phase);
+                eprintln!(
+                    "[run] Resetting phase from '{}' to 'proving' for continuation",
+                    s.proof.phase
+                );
                 s.proof.phase = "proving".to_string();
             }
             s.proof.is_autonomous_running = false; // will be set by the loop
@@ -67,8 +67,12 @@ pub async fn run_autonomous(
         }
         let session = state.current_session().cloned().unwrap();
         eprintln!("[run] Session: {} ({})", session.title, session.id);
-        eprintln!("[run] Phase: {}, Nodes: {}, Branches: {}",
-            session.proof.phase, session.proof.nodes.len(), session.proof.branches.len());
+        eprintln!(
+            "[run] Phase: {}, Nodes: {}, Branches: {}",
+            session.proof.phase,
+            session.proof.nodes.len(),
+            session.proof.branches.len()
+        );
 
         // If a new problem text was given, submit it as a continuation message
         if !problem.trim().is_empty() {
@@ -143,7 +147,11 @@ pub async fn run_autonomous(
     }
     let should_submit = resume.is_none();
     eprintln!("[run] Problem: {problem}");
-    let submitted = if should_submit { state.submit_text(problem.clone()) } else { None };
+    let submitted = if should_submit {
+        state.submit_text(problem.clone())
+    } else {
+        None
+    };
     if let Some(_input) = submitted {
         if let Some(session) = state.current_session().cloned() {
             let s = store.clone();
@@ -180,21 +188,35 @@ pub async fn run_autonomous(
         while let Ok(event) = rx.try_recv() {
             match &event {
                 AppEvent::AppendAssistant(text) => {
-                    eprintln!("[run] Assistant ({} chars, {} lines)", text.len(), text.lines().count());
+                    eprintln!(
+                        "[run] Assistant ({} chars, {} lines)",
+                        text.len(),
+                        text.lines().count()
+                    );
                     for line in text.lines().take(15) {
                         eprintln!("  | {line}");
                     }
                 }
                 AppEvent::AppendNotice { title, content } => {
-                    eprintln!("[run] {title}: {}", content.chars().take(200).collect::<String>());
+                    eprintln!(
+                        "[run] {title}: {}",
+                        content.chars().take(200).collect::<String>()
+                    );
                 }
                 AppEvent::ToolCallReceived { tool_name, .. } => {
                     eprintln!("[run] TOOL: {tool_name}");
                 }
-                AppEvent::ToolResultReceived { tool_name, success, output, .. } => {
-                    eprintln!("[run] RESULT: {tool_name} -> {} ({})",
+                AppEvent::ToolResultReceived {
+                    tool_name,
+                    success,
+                    output,
+                    ..
+                } => {
+                    eprintln!(
+                        "[run] RESULT: {tool_name} -> {} ({})",
                         if *success { "ok" } else { "FAIL" },
-                        output.chars().take(100).collect::<String>());
+                        output.chars().take(100).collect::<String>()
+                    );
                 }
                 _ => {}
             }
@@ -225,7 +247,10 @@ pub async fn run_autonomous(
         && session.proof.nodes.is_empty()
     {
         eprintln!("[run] No target extracted. Adding theorem node from problem.");
-        let node_label = state.current_session().map(|s| s.title.clone()).unwrap_or_else(|| "Goal".to_string());
+        let node_label = state
+            .current_session()
+            .map(|s| s.title.clone())
+            .unwrap_or_else(|| "Goal".to_string());
         let _ = state.add_proof_node(ProofNodeKind::Theorem, &node_label, &problem);
     }
 
@@ -256,7 +281,10 @@ pub async fn run_autonomous(
     // This must happen here (not earlier) because nodes may not exist until
     // the "No target extracted" fallback creates them above.
     {
-        let session_id = state.current_session().map(|s| s.id.clone()).unwrap_or_default();
+        let session_id = state
+            .current_session()
+            .map(|s| s.id.clone())
+            .unwrap_or_default();
         // Read ALL .lean files from workspace (model may use Main.lean, Defs.lean, etc.)
         let ws_dir = store.workspace_dir(&session_id);
         let mut all_lean = String::new();
@@ -284,26 +312,41 @@ pub async fn run_autonomous(
                 if !parsed.is_empty() {
                     let now = chrono::Utc::now().to_rfc3339();
                     let parsed_nodes = openproof_lean::declarations_to_proof_nodes(&parsed, &s.id);
-                    let old_statuses: std::collections::HashMap<String, openproof_protocol::ProofNodeStatus> =
-                        s.proof.nodes.iter().map(|n| (n.label.clone(), n.status)).collect();
+                    let old_statuses: std::collections::HashMap<
+                        String,
+                        openproof_protocol::ProofNodeStatus,
+                    > = s
+                        .proof
+                        .nodes
+                        .iter()
+                        .map(|n| (n.label.clone(), n.status))
+                        .collect();
 
-                    s.proof.nodes = parsed_nodes.iter().map(|pn| {
-                        let mut node = pn.clone();
-                        if let Some(&prev) = old_statuses.get(&node.label) {
-                            if prev == openproof_protocol::ProofNodeStatus::Verified && !node.content.contains("sorry") {
-                                node.status = prev;
+                    s.proof.nodes = parsed_nodes
+                        .iter()
+                        .map(|pn| {
+                            let mut node = pn.clone();
+                            if let Some(&prev) = old_statuses.get(&node.label) {
+                                if prev == openproof_protocol::ProofNodeStatus::Verified
+                                    && !node.content.contains("sorry")
+                                {
+                                    node.status = prev;
+                                }
                             }
-                        }
-                        if node.content.contains("sorry") {
-                            node.status = openproof_protocol::ProofNodeStatus::Proving;
-                        } else if !node.content.trim().is_empty() {
-                            node.status = openproof_protocol::ProofNodeStatus::Proving;
-                        }
-                        node.updated_at = now.clone();
-                        node
-                    }).collect();
+                            if node.content.contains("sorry") {
+                                node.status = openproof_protocol::ProofNodeStatus::Proving;
+                            } else if !node.content.trim().is_empty() {
+                                node.status = openproof_protocol::ProofNodeStatus::Proving;
+                            }
+                            node.updated_at = now.clone();
+                            node
+                        })
+                        .collect();
 
-                    eprintln!("[run] Parsed {} declarations from workspace", s.proof.nodes.len());
+                    eprintln!(
+                        "[run] Parsed {} declarations from workspace",
+                        s.proof.nodes.len()
+                    );
 
                     if let Some(root) = s.proof.nodes.first() {
                         s.proof.root_node_id = Some(root.id.clone());
@@ -311,8 +354,13 @@ pub async fn run_autonomous(
                 }
 
                 // Set active to first unverified root
-                s.proof.active_node_id = s.proof.nodes.iter()
-                    .find(|n| n.depth == 0 && n.status != openproof_protocol::ProofNodeStatus::Verified)
+                s.proof.active_node_id = s
+                    .proof
+                    .nodes
+                    .iter()
+                    .find(|n| {
+                        n.depth == 0 && n.status != openproof_protocol::ProofNodeStatus::Verified
+                    })
                     .or_else(|| s.proof.nodes.first())
                     .map(|n| n.id.clone());
 
@@ -337,7 +385,9 @@ pub async fn run_autonomous(
             for (path, _) in &files {
                 if path.ends_with(".lean") && !path.contains("history/") {
                     if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
-                        if !content.trim().is_empty() && !lean_candidates.iter().any(|c| c == &content) {
+                        if !content.trim().is_empty()
+                            && !lean_candidates.iter().any(|c| c == &content)
+                        {
                             lean_candidates.push(content);
                         }
                     }
@@ -347,11 +397,16 @@ pub async fn run_autonomous(
 
         // Also check node content and transcript as fallbacks
         for node in &session.proof.nodes {
-            if !node.content.trim().is_empty() && !lean_candidates.iter().any(|c| c == &node.content) {
+            if !node.content.trim().is_empty()
+                && !lean_candidates.iter().any(|c| c == &node.content)
+            {
                 lean_candidates.push(node.content.clone());
             }
         }
-        if let Some(last_msg) = session.transcript.iter().rev()
+        if let Some(last_msg) = session
+            .transcript
+            .iter()
+            .rev()
             .find(|e| e.role == MessageRole::Assistant)
         {
             for block in extract_lean_blocks_from_text(&last_msg.content) {
@@ -429,8 +484,7 @@ pub async fn run_autonomous(
                         if let Some(session) = state.current_session().cloned() {
                             let s = store.clone();
                             let _ =
-                                tokio::task::spawn_blocking(move || s.save_session(&session))
-                                    .await;
+                                tokio::task::spawn_blocking(move || s.save_session(&session)).await;
                         }
 
                         let session = state.current_session().cloned().unwrap();
@@ -542,7 +596,10 @@ pub async fn run_autonomous(
 
         // Sync workspace content after branch turns (branches may have written files)
         {
-            let sid = state.current_session().map(|s| s.id.clone()).unwrap_or_default();
+            let sid = state
+                .current_session()
+                .map(|s| s.id.clone())
+                .unwrap_or_default();
             let ws_dir = store.workspace_dir(&sid);
             let mut all_lean = String::new();
             if let Ok(files) = store.list_workspace_files(&sid) {
@@ -600,11 +657,10 @@ pub async fn run_autonomous(
             }
             // In full_autonomous mode, don't stop on first verification.
             // Keep pushing -- verified sub-lemmas are progress but not the goal.
-            let all_verified = session.proof.nodes.iter()
-                .all(|n| {
-                    n.status == openproof_protocol::ProofNodeStatus::Verified
-                        && !n.content.contains("sorry")
-                });
+            let all_verified = session.proof.nodes.iter().all(|n| {
+                n.status == openproof_protocol::ProofNodeStatus::Verified
+                    && !n.content.contains("sorry")
+            });
             if all_verified {
                 eprintln!("[run] All nodes verified (no sorry) -- stopping.");
                 break;
@@ -616,14 +672,21 @@ pub async fn run_autonomous(
     // Paper is auto-generated in persist_write on every save.
     // Force a final save to ensure paper_tex is populated.
     if let Some(session) = state.current_session().cloned() {
-        persist_write(tx.clone(), store.clone(), openproof_core::PendingWrite { session });
+        persist_write(
+            tx.clone(),
+            store.clone(),
+            openproof_core::PendingWrite { session },
+        );
     }
 
     let session = state.current_session().cloned().unwrap();
     eprintln!("\n[run] === Summary ===");
     eprintln!("[run] Session: {} ({})", session.title, session.id);
     eprintln!("[run] Phase: {}", session.proof.phase);
-    eprintln!("[run] Iterations: {}", session.proof.autonomous_iteration_count);
+    eprintln!(
+        "[run] Iterations: {}",
+        session.proof.autonomous_iteration_count
+    );
     eprintln!("[run] Nodes: {}", session.proof.nodes.len());
     for n in &session.proof.nodes {
         eprintln!("[run]   {} [{:?}]", n.label, n.status);
@@ -646,16 +709,24 @@ pub async fn run_autonomous(
 
     // Auto-sync to cloud if enabled
     let session = state.current_session().cloned().unwrap();
-    if session.cloud.sync_enabled && session.cloud.share_mode != openproof_protocol::ShareMode::Local {
+    if session.cloud.sync_enabled
+        && session.cloud.share_mode != openproof_protocol::ShareMode::Local
+    {
         eprintln!("[run] Syncing to cloud corpus...");
         let corpus_mgr = openproof_corpus::CorpusManager::new(
             store.clone(),
             openproof_cloud::CloudCorpusClient::new(Default::default()),
             std::path::PathBuf::from("."),
         );
-        match corpus_mgr.drain_sync_queue(session.cloud.share_mode, true, None).await {
+        match corpus_mgr
+            .drain_sync_queue(session.cloud.share_mode, true, None)
+            .await
+        {
             Ok(result) => {
-                eprintln!("[run] Synced: {} sent, {} failed", result.sent, result.failed);
+                eprintln!(
+                    "[run] Synced: {} sent, {} failed",
+                    result.sent, result.failed
+                );
             }
             Err(e) => {
                 eprintln!("[run] Sync error: {e}");
@@ -665,4 +736,3 @@ pub async fn run_autonomous(
 
     Ok(())
 }
-

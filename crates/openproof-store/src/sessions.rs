@@ -117,8 +117,7 @@ impl AppStore {
 
     pub(crate) fn ensure_default_session(&self) -> Result<()> {
         let conn = self.connect()?;
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))?;
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))?;
         if count > 0 {
             return Ok(());
         }
@@ -137,10 +136,10 @@ impl AppStore {
     }
 
     fn import_legacy_session_file(&self, path: &std::path::Path) -> Result<bool> {
-        let raw = fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
-        let value: Value = serde_json::from_str(&raw)
-            .with_context(|| format!("parsing {}", path.display()))?;
+        let raw =
+            fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let value: Value =
+            serde_json::from_str(&raw).with_context(|| format!("parsing {}", path.display()))?;
         let Some(id) = value.get("id").and_then(Value::as_str).map(str::to_string) else {
             return Ok(false);
         };
@@ -217,7 +216,11 @@ impl AppStore {
         Ok(None)
     }
 
-    pub(crate) fn upsert_session(&self, conn: &Connection, session: &SessionSnapshot) -> Result<()> {
+    pub(crate) fn upsert_session(
+        &self,
+        conn: &Connection,
+        session: &SessionSnapshot,
+    ) -> Result<()> {
         let transcript_json = serde_json::to_string(&session.transcript)?;
         let cloud_json = serde_json::to_string(&session.cloud)?;
         let proof_json = serde_json::to_string(&session.proof)?;

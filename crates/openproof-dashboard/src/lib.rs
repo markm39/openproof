@@ -265,11 +265,17 @@ async fn workspace_files(
         for (path, _size) in entries {
             if path.ends_with(".lean") && !path.contains("history/") {
                 let content = std::fs::read_to_string(ws_dir.join(&path)).unwrap_or_default();
-                if !first { result.push(','); }
+                if !first {
+                    result.push(',');
+                }
                 first = false;
                 // Manual JSON to avoid serde_json dependency
-                let escaped = content.replace('\\', "\\\\").replace('"', "\\\"")
-                    .replace('\n', "\\n").replace('\r', "\\r").replace('\t', "\\t");
+                let escaped = content
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\t', "\\t");
                 result.push_str(&format!(
                     "{{\"path\":\"{path}\",\"content\":\"{escaped}\"}}"
                 ));
@@ -325,7 +331,8 @@ fn generate_tex(session: &SessionSnapshot) -> String {
         doc.push_str("\\date{\\today}\n\n");
         doc.push_str("\\begin{document}\n\\maketitle\n\n");
         // Strip [language=Lean] etc. -- listings doesn't know Lean.
-        let sanitized = proof.paper_tex
+        let sanitized = proof
+            .paper_tex
             .replace("[language=Lean]", "")
             .replace("[language=lean]", "")
             .replace("[language=lean4]", "")
@@ -381,9 +388,15 @@ fn generate_tex(session: &SessionSnapshot) -> String {
                 _ => "proposition",
             };
             let status_marker = match node.status {
-                openproof_protocol::ProofNodeStatus::Verified => " \\textnormal{[\\textcolor{green!70!black}{verified}]}",
-                openproof_protocol::ProofNodeStatus::Failed => " \\textnormal{[\\textcolor{red}{failed}]}",
-                openproof_protocol::ProofNodeStatus::Proving => " \\textnormal{[\\textcolor{orange}{proving}]}",
+                openproof_protocol::ProofNodeStatus::Verified => {
+                    " \\textnormal{[\\textcolor{green!70!black}{verified}]}"
+                }
+                openproof_protocol::ProofNodeStatus::Failed => {
+                    " \\textnormal{[\\textcolor{red}{failed}]}"
+                }
+                openproof_protocol::ProofNodeStatus::Proving => {
+                    " \\textnormal{[\\textcolor{orange}{proving}]}"
+                }
                 _ => "",
             };
             doc.push_str(&format!(

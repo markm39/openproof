@@ -6,11 +6,11 @@ use std::path::Path;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+use crate::manifest::read_lake_manifest;
 use crate::packages::{
     collect_seed_packages, decl_namespace, environment_fingerprint, package_revision_set_hash,
     resolve_package_for_module,
 };
-use crate::manifest::read_lake_manifest;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "recordType", rename_all = "camelCase")]
@@ -161,7 +161,9 @@ pub async fn run_library_seed_ingestion(
             let store = store.clone();
             let run_id = run_id.clone();
             let msg = msg.clone();
-            move || store.finish_ingestion_run(&run_id, "failed", &serde_json::json!({}), Some(&msg))
+            move || {
+                store.finish_ingestion_run(&run_id, "failed", &serde_json::json!({}), Some(&msg))
+            }
         })
         .await??;
         anyhow::bail!("{msg}");
@@ -301,7 +303,9 @@ pub async fn run_library_seed_ingestion(
             let store = store.clone();
             let run_id = run_id.clone();
             let msg = msg.clone();
-            move || store.finish_ingestion_run(&run_id, "failed", &serde_json::json!({}), Some(&msg))
+            move || {
+                store.finish_ingestion_run(&run_id, "failed", &serde_json::json!({}), Some(&msg))
+            }
         })
         .await??;
         anyhow::bail!("{msg}");
@@ -310,8 +314,7 @@ pub async fn run_library_seed_ingestion(
     // Rebuild search index
     {
         let store = store.clone();
-        tokio::task::spawn_blocking(move || store.rebuild_corpus_search_index())
-            .await??;
+        tokio::task::spawn_blocking(move || store.rebuild_corpus_search_index()).await??;
     }
 
     // Finish run

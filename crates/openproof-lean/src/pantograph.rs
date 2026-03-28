@@ -45,8 +45,7 @@ impl Pantograph {
         let repl_path = Self::find_repl(project_dir)?;
 
         // Get LEAN_PATH from the project
-        let lean_path = crate::tools::resolve_lean_path(project_dir)
-            .unwrap_or_default();
+        let lean_path = crate::tools::resolve_lean_path(project_dir).unwrap_or_default();
 
         // Pass "Mathlib" as argument so Pantograph preloads the environment.
         // This takes ~18s but subsequent operations are milliseconds.
@@ -68,7 +67,10 @@ impl Pantograph {
         let mut ready_line = String::new();
         reader.read_line(&mut ready_line)?;
         if !ready_line.trim().starts_with("ready") {
-            anyhow::bail!("Pantograph did not send ready signal: {}", ready_line.trim());
+            anyhow::bail!(
+                "Pantograph did not send ready signal: {}",
+                ready_line.trim()
+            );
         }
 
         Ok(Self {
@@ -98,7 +100,9 @@ impl Pantograph {
             }
         }
 
-        anyhow::bail!("Pantograph REPL not found. Build it: cd vendor/Pantograph && lake build repl")
+        anyhow::bail!(
+            "Pantograph REPL not found. Build it: cd vendor/Pantograph && lake build repl"
+        )
     }
 
     /// Send a command and read the JSON response.
@@ -124,12 +128,15 @@ impl Pantograph {
     /// Verify a Lean file by processing its content.
     /// Returns diagnostics and whether it compiled successfully.
     pub fn verify_content(&mut self, content: &str) -> Result<PantographVerifyResult> {
-        let response = self.send_command("frontend.process", json!({
-            "file": content,
-            "readHeader": true,
-            "inheritEnv": false,
-            "newConstants": true,
-        }))?;
+        let response = self.send_command(
+            "frontend.process",
+            json!({
+                "file": content,
+                "readHeader": true,
+                "inheritEnv": false,
+                "newConstants": true,
+            }),
+        )?;
 
         let mut messages = Vec::new();
         let mut has_error = false;
@@ -178,9 +185,12 @@ impl Pantograph {
     /// Start a proof goal from a type expression.
     /// Returns a state ID that can be used with `try_tactic`.
     pub fn start_goal(&mut self, expr: &str) -> Result<Option<u64>> {
-        let response = self.send_command("goal.start", json!({
-            "expr": expr,
-        }))?;
+        let response = self.send_command(
+            "goal.start",
+            json!({
+                "expr": expr,
+            }),
+        )?;
 
         if let Some(id) = response.get("stateId").and_then(|v| v.as_u64()) {
             Ok(Some(id))
@@ -191,12 +201,20 @@ impl Pantograph {
 
     /// Try a tactic on a goal state. Returns whether it succeeded
     /// and any remaining goals.
-    pub fn try_tactic(&mut self, state_id: u64, goal_id: u64, tactic: &str) -> Result<TacticTestResult> {
-        let response = self.send_command("goal.tactic", json!({
-            "stateId": state_id,
-            "goalId": goal_id,
-            "tactic": tactic,
-        }))?;
+    pub fn try_tactic(
+        &mut self,
+        state_id: u64,
+        goal_id: u64,
+        tactic: &str,
+    ) -> Result<TacticTestResult> {
+        let response = self.send_command(
+            "goal.tactic",
+            json!({
+                "stateId": state_id,
+                "goalId": goal_id,
+                "tactic": tactic,
+            }),
+        )?;
 
         if let Some(err) = response.get("parseError").and_then(|v| v.as_str()) {
             return Ok(TacticTestResult {
@@ -209,7 +227,8 @@ impl Pantograph {
 
         if let Some(errors) = response.get("tacticErrors").and_then(|v| v.as_array()) {
             if !errors.is_empty() {
-                let err_msgs: Vec<String> = errors.iter()
+                let err_msgs: Vec<String> = errors
+                    .iter()
                     .filter_map(|e| e.as_str().map(String::from))
                     .collect();
                 return Ok(TacticTestResult {
@@ -225,7 +244,8 @@ impl Pantograph {
             .get("nextStateId")
             .or_else(|| response.get("stateId"))
             .and_then(|v| v.as_u64());
-        let goals: Vec<String> = response.get("goals")
+        let goals: Vec<String> = response
+            .get("goals")
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
@@ -258,12 +278,19 @@ impl Pantograph {
 
     /// Inspect an environment symbol.
     pub fn inspect(&mut self, name: &str) -> Result<Option<String>> {
-        let response = self.send_command("env.inspect", json!({
-            "name": name,
-            "value": false,
-        }))?;
+        let response = self.send_command(
+            "env.inspect",
+            json!({
+                "name": name,
+                "value": false,
+            }),
+        )?;
 
-        if let Some(ty) = response.get("type").and_then(|v| v.get("pp")).and_then(|v| v.as_str()) {
+        if let Some(ty) = response
+            .get("type")
+            .and_then(|v| v.get("pp"))
+            .and_then(|v| v.as_str())
+        {
             Ok(Some(ty.to_string()))
         } else {
             Ok(None)
