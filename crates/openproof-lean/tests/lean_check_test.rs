@@ -1,4 +1,4 @@
-//! Integration test for lean_check Pantograph fast path and batch support.
+//! Integration tests for Pantograph fast paths: lean_check, lean_verify, lean_eval.
 //!
 //! Requires Pantograph and Lean with Mathlib. Ignored if Pantograph is not available.
 

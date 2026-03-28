@@ -480,8 +480,8 @@ fn tool_lean_eval_fn(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
         .get("expr")
         .and_then(Value::as_str)
         .context("missing 'expr' argument")?;
+
     let imports = build_import_block(ctx.imports);
-    // #eval runs a Lean expression and prints the result
     let content = format!("{imports}\n#eval ({expr})\n");
     let scratch_path = write_temp_file(&content)?;
     let (ok, output) = run_lean_command(ctx.project_dir, &scratch_path)?;
