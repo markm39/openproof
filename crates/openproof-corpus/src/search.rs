@@ -25,8 +25,7 @@ pub async fn search_shared_corpus(
         return Ok(Vec::new());
     }
 
-    let mut scopes: Vec<(ShareMode, Option<&CloudCorpusAuthContext>)> =
-        vec![(share_mode, auth)];
+    let mut scopes: Vec<(ShareMode, Option<&CloudCorpusAuthContext>)> = vec![(share_mode, auth)];
     if share_mode == ShareMode::Private && include_community_overlay {
         scopes.push((ShareMode::Community, auth));
     }
@@ -145,12 +144,12 @@ pub async fn drain_sync_queue(
 
     let jobs = {
         let store = store.clone();
-        tokio::task::spawn_blocking(move || store.list_sync_jobs_full(200))
-            .await??
+        tokio::task::spawn_blocking(move || store.list_sync_jobs_full(200)).await??
     };
 
     // Sync failed attempts first (independent of verified items)
-    let failure_jobs: Vec<_> = jobs.iter()
+    let failure_jobs: Vec<_> = jobs
+        .iter()
         .filter(|j| j.status == "pending" && j.queue_type == "attempt.failure")
         .cloned()
         .collect();
@@ -164,11 +163,11 @@ pub async fn drain_sync_queue(
         }
         let store = store.clone();
         let jid = job.id.clone();
-        let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
-            .await;
+        let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent")).await;
     }
     // Sync corpus edges
-    let edge_jobs: Vec<_> = jobs.iter()
+    let edge_jobs: Vec<_> = jobs
+        .iter()
         .filter(|j| j.status == "pending" && j.queue_type == "corpus.edges")
         .cloned()
         .collect();
@@ -178,8 +177,7 @@ pub async fn drain_sync_queue(
         }
         let store = store.clone();
         let jid = job.id.clone();
-        let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
-            .await;
+        let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent")).await;
     }
 
     let pending_jobs: Vec<_> = jobs
@@ -228,10 +226,8 @@ pub async fn drain_sync_queue(
         let store = store.clone();
         let keys = identity_keys.clone();
         let vis = visibility_scope.to_string();
-        tokio::task::spawn_blocking(move || {
-            store.list_verified_upload_candidates(256, &keys, &vis)
-        })
-        .await??
+        tokio::task::spawn_blocking(move || store.list_verified_upload_candidates(256, &keys, &vis))
+            .await??
     };
 
     if candidates.is_empty() {
@@ -239,8 +235,8 @@ pub async fn drain_sync_queue(
         for job in &pending_jobs {
             let store = store.clone();
             let jid = job.id.clone();
-            let _ = tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
-                .await;
+            let _ =
+                tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent")).await;
         }
         return Ok(DrainSyncResult {
             sent: 0,
@@ -281,10 +277,9 @@ pub async fn drain_sync_queue(
             for job in &pending_jobs {
                 let store = store.clone();
                 let jid = job.id.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    store.mark_sync_job_status(&jid, "sent")
-                })
-                .await;
+                let _ =
+                    tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "sent"))
+                        .await;
             }
             DrainSyncResult {
                 sent: candidates.len(),
@@ -296,10 +291,9 @@ pub async fn drain_sync_queue(
             for job in &pending_jobs {
                 let store = store.clone();
                 let jid = job.id.clone();
-                let _ = tokio::task::spawn_blocking(move || {
-                    store.mark_sync_job_status(&jid, "failed")
-                })
-                .await;
+                let _ =
+                    tokio::task::spawn_blocking(move || store.mark_sync_job_status(&jid, "failed"))
+                        .await;
             }
             DrainSyncResult {
                 sent: 0,

@@ -72,8 +72,7 @@ fn tool_lean_verify(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
         .and_then(Value::as_str)
         .unwrap_or("Scratch.lean");
     let target = sanitize_path(ctx.workspace_dir, file)?;
-    let content = fs::read_to_string(&target)
-        .with_context(|| format!("reading {file}"))?;
+    let content = fs::read_to_string(&target).with_context(|| format!("reading {file}"))?;
 
     let full_content = build_compilation_unit(&content, ctx);
 
@@ -97,7 +96,8 @@ fn build_compilation_unit(content: &str, ctx: &ToolContext) -> String {
         let mut body_start = 0;
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("import ") || trimmed.starts_with("open ") || trimmed.is_empty() {
+            if trimmed.starts_with("import ") || trimmed.starts_with("open ") || trimmed.is_empty()
+            {
                 imports.push(line.to_string());
                 body_start += line.len() + 1; // +1 for newline
             } else {
@@ -155,8 +155,8 @@ fn tool_lean_goals(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
     if let Some(ref lsp) = ctx.lsp_mcp {
         if let Ok(mut mcp) = lsp.lock() {
             if mcp.is_alive() {
-                let content = fs::read_to_string(&target)
-                    .with_context(|| format!("reading {file}"))?;
+                let content =
+                    fs::read_to_string(&target).with_context(|| format!("reading {file}"))?;
                 // Write to project dir so MCP can find it
                 let project_scratch = ctx.project_dir.join("Scratch.lean");
                 let _ = fs::write(&project_scratch, &content);
@@ -173,13 +173,13 @@ fn tool_lean_goals(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
                 for (line, _col) in &sorry_positions {
                     match mcp.get_goals(&project_scratch, *line, None) {
                         Ok(goal_state) => {
-                            let goals = goal_state.goals_before.as_ref()
+                            let goals = goal_state
+                                .goals_before
+                                .as_ref()
                                 .or(goal_state.goals.as_ref())
                                 .map(|g| g.join("\n---\n"))
                                 .unwrap_or_else(|| "(no goals)".to_string());
-                            output_parts.push(format!(
-                                "Line {line}:\n{goals}"
-                            ));
+                            output_parts.push(format!("Line {line}:\n{goals}"));
                         }
                         Err(e) => {
                             output_parts.push(format!("Line {line}: error: {e}"));
@@ -196,8 +196,7 @@ fn tool_lean_goals(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
     }
 
     // Fallback: use regex-based goal extraction
-    let content = fs::read_to_string(&target)
-        .with_context(|| format!("reading {file}"))?;
+    let content = fs::read_to_string(&target).with_context(|| format!("reading {file}"))?;
 
     let full_content = if content.trim_start().starts_with("import ") {
         content
@@ -258,10 +257,11 @@ fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutpu
     if let Some(ref prover) = ctx.prover {
         if let Ok(mut sp) = prover.lock() {
             if sp.is_alive() {
-                let content = fs::read_to_string(&target)
-                    .with_context(|| format!("reading {file}"))?;
+                let content =
+                    fs::read_to_string(&target).with_context(|| format!("reading {file}"))?;
                 // Strip imports -- Pantograph has Mathlib preloaded
-                let no_imports: String = content.lines()
+                let no_imports: String = content
+                    .lines()
                     .filter(|l| !l.trim().starts_with("import ") && !l.trim().starts_with("open "))
                     .collect::<Vec<_>>()
                     .join("\n");
@@ -289,8 +289,13 @@ fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutpu
                             };
                             let mut entry = format!("[{status}] {tactic}");
                             if status == "FAILED" {
-                                if let Some(err) = result.messages.iter().find(|m| m.contains("error")) {
-                                    entry.push_str(&format!("\n  Error: {}", err.lines().next().unwrap_or("")));
+                                if let Some(err) =
+                                    result.messages.iter().find(|m| m.contains("error"))
+                                {
+                                    entry.push_str(&format!(
+                                        "\n  Error: {}",
+                                        err.lines().next().unwrap_or("")
+                                    ));
                                 }
                             }
                             parts.push(entry);
@@ -326,10 +331,7 @@ fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutpu
                             };
                             let mut entry = format!("[{status}] {}", item.snippet);
                             if !item.goals.is_empty() {
-                                entry.push_str(&format!(
-                                    "\n  Goals: {}",
-                                    item.goals.join(" | ")
-                                ));
+                                entry.push_str(&format!("\n  Goals: {}", item.goals.join(" | ")));
                             }
                             for diag in &item.diagnostics {
                                 if diag.severity == "error" {
@@ -355,8 +357,7 @@ fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutpu
     }
 
     // Fallback: try each tactic via lean_search_tactic one at a time
-    let content = fs::read_to_string(&target)
-        .with_context(|| format!("reading {file}"))?;
+    let content = fs::read_to_string(&target).with_context(|| format!("reading {file}"))?;
 
     let full_content = if content.trim_start().starts_with("import ") {
         content
@@ -377,7 +378,8 @@ fn tool_lean_screen_tactics(args: &Value, ctx: &ToolContext) -> Result<ToolOutpu
         } else {
             "FAILED"
         };
-        let first_error = output.lines()
+        let first_error = output
+            .lines()
             .find(|l| l.contains("error"))
             .unwrap_or("")
             .trim();
@@ -402,11 +404,10 @@ pub fn find_sorry_positions(content: &str) -> Vec<(usize, usize)> {
         while let Some(pos) = line[start..].find("sorry") {
             let abs_pos = start + pos;
             // Check it's a word boundary (not part of a larger identifier)
-            let before_ok = abs_pos == 0
-                || !line.as_bytes()[abs_pos - 1].is_ascii_alphanumeric();
+            let before_ok = abs_pos == 0 || !line.as_bytes()[abs_pos - 1].is_ascii_alphanumeric();
             let after_pos = abs_pos + 5;
-            let after_ok = after_pos >= line.len()
-                || !line.as_bytes()[after_pos].is_ascii_alphanumeric();
+            let after_ok =
+                after_pos >= line.len() || !line.as_bytes()[after_pos].is_ascii_alphanumeric();
             if before_ok && after_ok {
                 positions.push((i + 1, abs_pos + 1)); // 1-indexed
             }
@@ -459,8 +460,7 @@ fn tool_lean_search_tactic(args: &Value, ctx: &ToolContext) -> Result<ToolOutput
     let target_line = args.get("line").and_then(Value::as_u64);
 
     let target = sanitize_path(ctx.workspace_dir, file)?;
-    let content = fs::read_to_string(&target)
-        .with_context(|| format!("reading {file}"))?;
+    let content = fs::read_to_string(&target).with_context(|| format!("reading {file}"))?;
 
     // Replace the sorry at the specified line (or first sorry) with the search tactic.
     let modified = if let Some(line_num) = target_line {
@@ -515,8 +515,7 @@ fn tool_file_read(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
         .and_then(Value::as_str)
         .context("missing 'path' argument")?;
     let target = sanitize_path(ctx.workspace_dir, path)?;
-    let content = fs::read_to_string(&target)
-        .with_context(|| format!("reading {path}"))?;
+    let content = fs::read_to_string(&target).with_context(|| format!("reading {path}"))?;
     // Add line numbers.
     let numbered: String = content
         .lines()
@@ -543,8 +542,7 @@ fn tool_file_write(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
-    fs::write(&target, content)
-        .with_context(|| format!("writing {path}"))?;
+    fs::write(&target, content).with_context(|| format!("writing {path}"))?;
     let size = content.len();
     Ok(ToolOutput {
         success: true,
@@ -562,8 +560,8 @@ fn tool_file_patch(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
         .and_then(Value::as_str)
         .context("missing 'patch' argument")?;
     let target = sanitize_path(ctx.workspace_dir, path)?;
-    let original = fs::read_to_string(&target)
-        .with_context(|| format!("reading {path} for patching"))?;
+    let original =
+        fs::read_to_string(&target).with_context(|| format!("reading {path} for patching"))?;
 
     match crate::patch::apply_patch(&original, patch_text) {
         Some(result) => {
@@ -577,7 +575,8 @@ fn tool_file_patch(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
             // Extract diff lines from the patch text for display
             for line in patch_text.lines() {
                 let trimmed = line.trim();
-                if trimmed.starts_with('+') || trimmed.starts_with('-') || trimmed.starts_with("@@") {
+                if trimmed.starts_with('+') || trimmed.starts_with('-') || trimmed.starts_with("@@")
+                {
                     output.push('\n');
                     output.push_str(trimmed);
                 }
@@ -631,10 +630,7 @@ fn sanitize_path(workspace_dir: &Path, relative: &str) -> Result<PathBuf> {
 }
 
 fn write_temp_file(content: &str) -> Result<PathBuf> {
-    let dir = std::env::temp_dir().join(format!(
-        "openproof-lean-{}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("openproof-lean-{}", std::process::id()));
     fs::create_dir_all(&dir)?;
     let path = dir.join("Scratch.lean");
     fs::write(&path, content)?;
@@ -682,7 +678,11 @@ pub fn resolve_lean_path(project_dir: &Path) -> Option<String> {
                 .ok()
                 .and_then(|out| {
                     let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                    if path.is_empty() { None } else { Some(path) }
+                    if path.is_empty() {
+                        None
+                    } else {
+                        Some(path)
+                    }
                 })
         })
         .clone()
@@ -729,17 +729,27 @@ fn wait_with_timeout(
     loop {
         match child.try_wait()? {
             Some(status) => {
-                let stdout = child.stdout.map(|mut s| {
-                    let mut buf = Vec::new();
-                    std::io::Read::read_to_end(&mut s, &mut buf).ok();
-                    buf
-                }).unwrap_or_default();
-                let stderr = child.stderr.map(|mut s| {
-                    let mut buf = Vec::new();
-                    std::io::Read::read_to_end(&mut s, &mut buf).ok();
-                    buf
-                }).unwrap_or_default();
-                return Ok(std::process::Output { status, stdout, stderr });
+                let stdout = child
+                    .stdout
+                    .map(|mut s| {
+                        let mut buf = Vec::new();
+                        std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                        buf
+                    })
+                    .unwrap_or_default();
+                let stderr = child
+                    .stderr
+                    .map(|mut s| {
+                        let mut buf = Vec::new();
+                        std::io::Read::read_to_end(&mut s, &mut buf).ok();
+                        buf
+                    })
+                    .unwrap_or_default();
+                return Ok(std::process::Output {
+                    status,
+                    stdout,
+                    stderr,
+                });
             }
             None => {
                 if start.elapsed() > timeout {
@@ -842,4 +852,3 @@ fn tool_shell_run(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
         content: truncate_output(&combined),
     })
 }
-

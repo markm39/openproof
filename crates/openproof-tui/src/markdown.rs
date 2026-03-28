@@ -296,7 +296,10 @@ mod tests {
     fn header_level_1() {
         let lines = render_markdown("# My Header", Style::default());
         assert_eq!(lines[0].spans[0].style.fg, Some(Color::Cyan));
-        assert!(lines[0].spans[0].style.add_modifier.contains(Modifier::BOLD));
+        assert!(lines[0].spans[0]
+            .style
+            .add_modifier
+            .contains(Modifier::BOLD));
     }
 
     #[test]
@@ -310,7 +313,10 @@ mod tests {
     fn link_shows_text() {
         let lines = render_markdown("See [docs](https://example.com)", Style::default());
         let spans = &lines[0].spans;
-        let link_span = spans.iter().find(|s| s.style.fg == Some(Color::Cyan)).unwrap();
+        let link_span = spans
+            .iter()
+            .find(|s| s.style.fg == Some(Color::Cyan))
+            .unwrap();
         assert_eq!(span_text(link_span), "docs");
     }
 
@@ -318,7 +324,10 @@ mod tests {
     fn inline_code_has_yellow() {
         let lines = render_markdown("Use `cargo build` here", Style::default());
         let spans = &lines[0].spans;
-        let code_span = spans.iter().find(|s| s.style.fg == Some(Color::Yellow)).unwrap();
+        let code_span = spans
+            .iter()
+            .find(|s| s.style.fg == Some(Color::Yellow))
+            .unwrap();
         assert_eq!(span_text(code_span), "cargo build");
     }
 

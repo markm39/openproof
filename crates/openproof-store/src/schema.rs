@@ -307,7 +307,7 @@ pub(crate) fn open_connection(db_path: &Path) -> Result<Connection> {
                 DROP TABLE corpus_edges;
                 ALTER TABLE corpus_edges_new RENAME TO corpus_edges;
                 CREATE INDEX IF NOT EXISTS idx_corpus_edges_from ON corpus_edges(from_item_key);
-                CREATE INDEX IF NOT EXISTS idx_corpus_edges_to ON corpus_edges(to_item_key);"
+                CREATE INDEX IF NOT EXISTS idx_corpus_edges_to ON corpus_edges(to_item_key);",
             );
         }
     }

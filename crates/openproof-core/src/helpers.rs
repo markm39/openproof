@@ -66,11 +66,7 @@ pub fn summarize_lean_error(result: &LeanVerificationSummary) -> String {
     } else {
         "Lean verification failed."
     };
-    message
-        .lines()
-        .take(12)
-        .collect::<Vec<_>>()
-        .join("\n")
+    message.lines().take(12).collect::<Vec<_>>().join("\n")
 }
 
 pub fn default_session_with_workspace(

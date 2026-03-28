@@ -120,7 +120,10 @@ pub fn parse_assistant_output(text: &str) -> ParsedAssistantOutput {
             continue;
         }
         if let Some((option_id, target)) = parse_option_target(line) {
-            if let Some(existing) = question_options.iter_mut().find(|option| option.id == option_id) {
+            if let Some(existing) = question_options
+                .iter_mut()
+                .find(|option| option.id == option_id)
+            {
                 existing.formal_target = target;
             } else {
                 question_options.push(ProofQuestionOption {
@@ -207,7 +210,12 @@ pub fn derive_goal_label(title: &str) -> String {
     label = label.trim_matches('_').to_string();
     if label.is_empty() {
         "goal".to_string()
-    } else if label.chars().next().map(|ch| ch.is_ascii_digit()).unwrap_or(false) {
+    } else if label
+        .chars()
+        .next()
+        .map(|ch| ch.is_ascii_digit())
+        .unwrap_or(false)
+    {
         format!("goal_{label}")
     } else {
         label

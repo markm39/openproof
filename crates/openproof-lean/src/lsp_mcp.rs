@@ -45,7 +45,9 @@ impl LeanLspMcp {
                     .env("LEAN_PROJECT_PATH", project_dir)
                     .spawn()
             })
-            .context("Failed to spawn lean-lsp-mcp. Install: uv tool install lean-lsp-mcp --python 3.12")?;
+            .context(
+                "Failed to spawn lean-lsp-mcp. Install: uv tool install lean-lsp-mcp --python 3.12",
+            )?;
 
         let stdin = child.stdin.take().context("No stdin on child")?;
         let stdout = child.stdout.take().context("No stdout on child")?;
@@ -164,8 +166,7 @@ impl LeanLspMcp {
 
         let result = self.call_tool("lean_diagnostic_messages", args)?;
         let text = extract_text_content(&result)?;
-        serde_json::from_str(&text)
-            .context("Failed to parse DiagnosticsResult")
+        serde_json::from_str(&text).context("Failed to parse DiagnosticsResult")
     }
 
     /// Get hover info (type signature, documentation) at a position.
@@ -291,7 +292,11 @@ impl Drop for LeanLspMcp {
 /// MCP returns `{"content": [{"type": "text", "text": "..."}], "isError": false}`.
 fn extract_text_content(result: &Value) -> Result<String> {
     // Check for error
-    if result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         let text = result
             .get("content")
             .and_then(|c| c.as_array())

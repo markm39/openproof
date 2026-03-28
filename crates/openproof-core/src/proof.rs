@@ -30,7 +30,8 @@ impl AppState {
             // If adding a sub-lemma, set parent to the current active node
             let parent = session.proof.active_node_id.clone();
             let depth = if kind == ProofNodeKind::Lemma {
-                parent.as_deref()
+                parent
+                    .as_deref()
                     .and_then(|pid| session.proof.nodes.iter().find(|n| n.id == pid))
                     .map(|p| p.depth + 1)
                     .unwrap_or(0)
@@ -200,8 +201,7 @@ impl AppState {
             });
             session.updated_at = timestamp;
             session.proof.hidden_branch_count = hidden.len();
-            session.proof.hidden_best_branch_id =
-                hidden.first().map(|branch| branch.id.clone());
+            session.proof.hidden_best_branch_id = hidden.first().map(|branch| branch.id.clone());
             if let Some(value) = active_retrieval_summary {
                 session.proof.active_retrieval_summary = value;
             }
@@ -227,9 +227,7 @@ impl AppState {
                 return Err("No active session.".to_string());
             };
             let previous_active = session.proof.active_foreground_branch_id.clone();
-            if let Some(previous_id) =
-                previous_active.as_deref().filter(|id| *id != branch_id)
-            {
+            if let Some(previous_id) = previous_active.as_deref().filter(|id| *id != branch_id) {
                 if let Some(previous) = session
                     .proof
                     .branches
@@ -275,23 +273,16 @@ impl AppState {
             let promoted_id = branch.id.clone();
             let promoted_role = branch.role;
             let promoted_focus_node_id = branch.focus_node_id.clone();
-            let promoted_goal_summary = branch
-                .latest_goals
-                .clone()
-                .or_else(|| {
-                    (!branch.goal_summary.trim().is_empty())
-                        .then(|| branch.goal_summary.clone())
-                });
+            let promoted_goal_summary = branch.latest_goals.clone().or_else(|| {
+                (!branch.goal_summary.trim().is_empty()).then(|| branch.goal_summary.clone())
+            });
             let promoted_latest_diagnostics = if resolved {
                 None
             } else {
-                branch
-                    .latest_diagnostics
-                    .clone()
-                    .or_else(|| {
-                        (!branch.last_lean_diagnostic.trim().is_empty())
-                            .then(|| branch.last_lean_diagnostic.clone())
-                    })
+                branch.latest_diagnostics.clone().or_else(|| {
+                    (!branch.last_lean_diagnostic.trim().is_empty())
+                        .then(|| branch.last_lean_diagnostic.clone())
+                })
             };
 
             session.updated_at = timestamp.clone();
@@ -328,8 +319,7 @@ impl AppState {
                     .then_with(|| right.updated_at.cmp(&left.updated_at))
             });
             session.proof.hidden_branch_count = hidden.len();
-            session.proof.hidden_best_branch_id =
-                hidden.first().map(|item| item.id.clone());
+            session.proof.hidden_best_branch_id = hidden.first().map(|item| item.id.clone());
             session.clone()
         };
         self.pending_writes += 1;
@@ -452,10 +442,7 @@ impl AppState {
         Ok((PendingWrite { session: snapshot }, branch_id, task_id))
     }
 
-    pub fn focus_target(
-        &mut self,
-        target: Option<&str>,
-    ) -> Result<Option<PendingWrite>, String> {
+    pub fn focus_target(&mut self, target: Option<&str>) -> Result<Option<PendingWrite>, String> {
         let Some(target) = target.filter(|value| !value.trim().is_empty()) else {
             let timestamp = Utc::now().to_rfc3339();
             let snapshot = {

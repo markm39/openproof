@@ -13,16 +13,28 @@ mod system_prompt;
 mod turn_handling;
 
 use anyhow::{bail, Result};
-use shell::{run_ask, run_dashboard, run_health, run_ingest_corpus, run_login, run_recluster_corpus, run_shell};
+use shell::{
+    run_ask, run_dashboard, run_health, run_ingest_corpus, run_login, run_recluster_corpus,
+    run_shell,
+};
 use std::{env, path::PathBuf};
 
 enum Command {
     Shell,
     Health,
     Login,
-    Ask { prompt: String },
-    Run { problem: String, label: Option<String>, resume: Option<String> },
-    Dashboard { open: bool, port: Option<u16> },
+    Ask {
+        prompt: String,
+    },
+    Run {
+        problem: String,
+        label: Option<String>,
+        resume: Option<String>,
+    },
+    Dashboard {
+        open: bool,
+        port: Option<u16>,
+    },
     ReclusterCorpus,
     IngestCorpus,
     Help,
@@ -44,9 +56,11 @@ async fn main() -> Result<()> {
         Command::Health => run_health(options.launch_cwd).await,
         Command::Login => run_login().await,
         Command::Ask { prompt } => run_ask(prompt).await,
-        Command::Run { problem, label, resume } => {
-            autonomous_headless::run_autonomous(options.launch_cwd, problem, label, resume).await
-        }
+        Command::Run {
+            problem,
+            label,
+            resume,
+        } => autonomous_headless::run_autonomous(options.launch_cwd, problem, label, resume).await,
         Command::Dashboard { open, port } => run_dashboard(options.launch_cwd, open, port).await,
         Command::ReclusterCorpus => run_recluster_corpus().await,
         Command::IngestCorpus => run_ingest_corpus().await,
@@ -99,8 +113,7 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
         });
     }
 
-    if args.iter().any(|arg| arg == "--login")
-        || args.first().map(String::as_str) == Some("login")
+    if args.iter().any(|arg| arg == "--login") || args.first().map(String::as_str) == Some("login")
     {
         return Ok(CliOptions {
             command: Command::Login,
@@ -193,7 +206,11 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
             bail!("openproof run requires a problem or --resume <session_id>. Usage: openproof run \"<problem>\" [--label <name>] [--resume <id>]");
         }
         return Ok(CliOptions {
-            command: Command::Run { problem, label, resume },
+            command: Command::Run {
+                problem,
+                label,
+                resume,
+            },
             launch_cwd,
         });
     }

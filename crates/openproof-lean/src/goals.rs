@@ -32,8 +32,10 @@ pub fn extract_sorry_goals(project_dir: &Path, content: &str) -> Result<Vec<(usi
         // or "declaration uses 'sorry'"
         if line.contains("unsolved goals") || line.contains("uses 'sorry'") {
             if let Some(ln) = extract_line_number(line, &scratch_path) {
-                if in_goal && current_line.is_some() {
-                    goals.push((current_line.unwrap(), current_goal.trim().to_string()));
+                if in_goal {
+                    if let Some(ln) = current_line {
+                        goals.push((ln, current_goal.trim().to_string()));
+                    }
                 }
                 current_line = Some(ln);
                 current_goal.clear();
@@ -55,8 +57,10 @@ pub fn extract_sorry_goals(project_dir: &Path, content: &str) -> Result<Vec<(usi
         }
     }
     // Flush last goal
-    if in_goal && current_line.is_some() && !current_goal.trim().is_empty() {
-        goals.push((current_line.unwrap(), current_goal.trim().to_string()));
+    if in_goal && !current_goal.trim().is_empty() {
+        if let Some(ln) = current_line {
+            goals.push((ln, current_goal.trim().to_string()));
+        }
     }
 
     Ok(goals)
@@ -70,10 +74,12 @@ pub fn run_tactic_suggestions(
 ) -> Result<Vec<String>> {
     // Replace the first `sorry` with the search tactic
     let modified = if let Some(pos) = content.find("sorry") {
-        format!("{}{}{}",
+        format!(
+            "{}{}{}",
             &content[..pos],
             tactic,
-            &content[pos + "sorry".len()..])
+            &content[pos + "sorry".len()..]
+        )
     } else {
         format!("{content}\n#check {tactic}")
     };
@@ -96,7 +102,10 @@ pub fn run_tactic_suggestions(
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix("Try this:") {
             suggestions.push(rest.trim().to_string());
-        } else if trimmed.starts_with("[exact]") || trimmed.starts_with("[apply]") || trimmed.starts_with("[rw]") {
+        } else if trimmed.starts_with("[exact]")
+            || trimmed.starts_with("[apply]")
+            || trimmed.starts_with("[rw]")
+        {
             if let Some(pos) = trimmed.find(']') {
                 suggestions.push(trimmed[pos + 1..].trim().to_string());
             }
@@ -131,15 +140,20 @@ pub fn extract_grounding_from_lean_output(stderr: &str, stdout: &str) -> Vec<Str
         if let Some(rest) = trimmed.strip_prefix("Try this:") {
             facts.push(format!("LEAN SUGGESTS: {}", rest.trim()));
         }
-        if trimmed.starts_with("[exact]") || trimmed.starts_with("[apply]") || trimmed.starts_with("[rw]") {
+        if trimmed.starts_with("[exact]")
+            || trimmed.starts_with("[apply]")
+            || trimmed.starts_with("[rw]")
+        {
             if let Some(pos) = trimmed.find(']') {
                 facts.push(format!("LEAN SUGGESTS: {}", trimmed[pos + 1..].trim()));
             }
         }
         // Type signatures from #check
         if trimmed.contains(" : ") && !trimmed.contains("error") && !trimmed.starts_with('/') {
-            let has_known_pattern = trimmed.contains('\u{2192}') || trimmed.contains('\u{2200}')
-                || trimmed.contains('\u{2203}') || trimmed.contains("Prop")
+            let has_known_pattern = trimmed.contains('\u{2192}')
+                || trimmed.contains('\u{2200}')
+                || trimmed.contains('\u{2203}')
+                || trimmed.contains("Prop")
                 || (trimmed.contains("(") && trimmed.contains(":"));
             if has_known_pattern && trimmed.len() > 10 && trimmed.len() < 500 {
                 facts.push(format!("LEAN REPORTS: {trimmed}"));

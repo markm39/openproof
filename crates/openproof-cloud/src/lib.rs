@@ -17,9 +17,7 @@ fn normalize_base_url(value: &str) -> Option<String> {
         None
     } else {
         // Strip trailing /api or /api/ to prevent doubled paths like /api/api/v1/...
-        let cleaned = trimmed
-            .trim_end_matches('/')
-            .trim_end_matches("/api");
+        let cleaned = trimmed.trim_end_matches('/').trim_end_matches("/api");
         Some(cleaned.to_string())
     }
 }
@@ -152,7 +150,10 @@ impl CloudCorpusClient {
                 headers.insert("content-type", val);
             }
         }
-        if let Some(token) = auth.and_then(|a| a.bearer_token.as_deref()).filter(|t| !t.trim().is_empty()) {
+        if let Some(token) = auth
+            .and_then(|a| a.bearer_token.as_deref())
+            .filter(|t| !t.trim().is_empty())
+        {
             if let Ok(val) = HeaderValue::from_str(&format!("Bearer {token}")) {
                 headers.insert("authorization", val);
             }
@@ -200,14 +201,11 @@ impl CloudCorpusClient {
         if share_mode == ShareMode::Local {
             return Ok(Vec::new());
         }
-        let clamped_limit = limit.max(1).min(32);
+        let clamped_limit = limit.clamp(1, 32);
         let response = self
             .client
             .get(format!("{base_url}/api/v1/search"))
-            .query(&[
-                ("query", query),
-                ("limit", &clamped_limit.to_string()),
-            ])
+            .query(&[("query", query), ("limit", &clamped_limit.to_string())])
             .headers(self.build_headers(auth, None))
             .send()
             .await
@@ -218,10 +216,8 @@ impl CloudCorpusClient {
                 response.status().as_u16()
             );
         }
-        let payload: CloudCorpusSearchResponse = response
-            .json()
-            .await
-            .context("parsing search response")?;
+        let payload: CloudCorpusSearchResponse =
+            response.json().await.context("parsing search response")?;
         Ok(payload.hits)
     }
 
@@ -253,10 +249,7 @@ impl CloudCorpusClient {
                 response.status().as_u16()
             );
         }
-        response
-            .json()
-            .await
-            .context("parsing upload response")
+        response.json().await.context("parsing upload response")
     }
 
     /// Fetch a single artifact by ID.
@@ -288,10 +281,8 @@ impl CloudCorpusClient {
                 response.status().as_u16()
             );
         }
-        let payload: CloudCorpusArtifactResponse = response
-            .json()
-            .await
-            .context("parsing artifact response")?;
+        let payload: CloudCorpusArtifactResponse =
+            response.json().await.context("parsing artifact response")?;
         Ok(Some(payload))
     }
 
@@ -317,10 +308,8 @@ impl CloudCorpusClient {
                 response.status().as_u16()
             );
         }
-        let payload: CloudCorpusPackagesResponse = response
-            .json()
-            .await
-            .context("parsing packages response")?;
+        let payload: CloudCorpusPackagesResponse =
+            response.json().await.context("parsing packages response")?;
         Ok(payload.packages)
     }
 
@@ -335,7 +324,7 @@ impl CloudCorpusClient {
             Some(url) => url,
             None => return Ok(Vec::new()),
         };
-        let clamped_limit = limit.max(1).min(32);
+        let clamped_limit = limit.clamp(1, 32);
         let response = match self
             .client
             .get(format!("{base_url}/api/v1/search/semantic"))
@@ -351,7 +340,8 @@ impl CloudCorpusClient {
         if !response.status().is_success() {
             return Ok(Vec::new());
         }
-        let payload: serde_json::Value = response.json().await.context("parsing semantic response")?;
+        let payload: serde_json::Value =
+            response.json().await.context("parsing semantic response")?;
         let hits = payload
             .get("hits")
             .and_then(|v| v.as_array())
@@ -361,7 +351,11 @@ impl CloudCorpusClient {
                         Some(SemanticSearchHit {
                             identity_key: h.get("identity_key")?.as_str()?.to_string(),
                             label: h.get("label")?.as_str()?.to_string(),
-                            statement: h.get("statement").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                            statement: h
+                                .get("statement")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                             score: h.get("score").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
                         })
                     })
@@ -372,10 +366,7 @@ impl CloudCorpusClient {
     }
 
     /// Upload a failed attempt to the cloud.
-    pub async fn upload_failed_attempt(
-        &self,
-        attempt: serde_json::Value,
-    ) -> Result<()> {
+    pub async fn upload_failed_attempt(&self, attempt: serde_json::Value) -> Result<()> {
         let base_url = match self.base_url() {
             Some(url) => url,
             None => return Ok(()),
@@ -478,10 +469,7 @@ impl CloudCorpusClient {
     }
 
     /// Upload corpus edges to cloud.
-    pub async fn upload_corpus_edges(
-        &self,
-        edges: serde_json::Value,
-    ) -> Result<()> {
+    pub async fn upload_corpus_edges(&self, edges: serde_json::Value) -> Result<()> {
         let base_url = match self.base_url() {
             Some(url) => url,
             None => return Ok(()),
@@ -523,14 +511,9 @@ impl CloudCorpusClient {
                 response.status().as_u16()
             );
         }
-        let payload: serde_json::Value = response
-            .json()
-            .await
-            .context("parsing export response")?;
-        let total = payload
-            .get("total")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as usize;
+        let payload: serde_json::Value =
+            response.json().await.context("parsing export response")?;
+        let total = payload.get("total").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
         let items = payload
             .get("items")
             .and_then(|v| v.as_array())

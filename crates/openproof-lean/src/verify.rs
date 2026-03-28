@@ -209,7 +209,8 @@ pub(crate) fn verify_scratch(
 }
 
 pub(crate) fn write_temp_scratch(rendered_scratch: &str) -> Result<PathBuf> {
-    let dir = std::env::temp_dir().join(format!("openproof-lean-{}", Utc::now().timestamp_millis()));
+    let dir =
+        std::env::temp_dir().join(format!("openproof-lean-{}", Utc::now().timestamp_millis()));
     fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
     let scratch_path = dir.join("Scratch.lean");
     fs::write(&scratch_path, rendered_scratch)

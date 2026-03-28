@@ -10,18 +10,17 @@ use anyhow::Result;
 use openproof_core::{AppEvent, AppState, PendingWrite};
 use openproof_protocol::{AgentRole, ProofBranch, SessionSnapshot, ShareMode};
 use openproof_store::AppStore;
-use std::{env, path::{Path, PathBuf}};
+use std::{
+    env,
+    path::{Path, PathBuf},
+};
 use tokio::sync::mpsc;
 
 // ---------------------------------------------------------------------------
 // Persist plumbing
 // ---------------------------------------------------------------------------
 
-pub fn persist_write(
-    tx: mpsc::UnboundedSender<AppEvent>,
-    store: AppStore,
-    write: PendingWrite,
-) {
+pub fn persist_write(tx: mpsc::UnboundedSender<AppEvent>, store: AppStore, write: PendingWrite) {
     let session_id = write.session.id.clone();
     // Paper.tex is a workspace file managed by the model via file_write/file_patch.
     // Read it from the workspace on every save so the dashboard has the latest.
@@ -208,17 +207,17 @@ pub fn autonomous_stop_reason_with_mode(
 
     // Always need a target
     if session.proof.accepted_target.is_none() && session.proof.formal_target.is_none() {
-        return Some(
-            "Set or accept a formal target before running autonomous search.".to_string(),
-        );
+        return Some("Set or accept a formal target before running autonomous search.".to_string());
     }
 
     if full_autonomous {
         // Full autonomous: only stop if ALL nodes are verified (proof complete)
         let all_verified = !session.proof.nodes.is_empty()
-            && session.proof.nodes.iter().all(|n| {
-                n.status == openproof_protocol::ProofNodeStatus::Verified
-            });
+            && session
+                .proof
+                .nodes
+                .iter()
+                .all(|n| n.status == openproof_protocol::ProofNodeStatus::Verified);
         if all_verified {
             return Some("All proof nodes verified.".to_string());
         }
@@ -366,9 +365,7 @@ pub fn index_verified_item(store: AppStore, identity_key: String, module_name: S
         let store_ref = store.clone();
         let ik = identity_key.clone();
         let mn = module_name.clone();
-        let _ = tokio::task::spawn_blocking(move || {
-            store_ref.auto_tag_from_module(&ik, &mn)
-        }).await;
+        let _ = tokio::task::spawn_blocking(move || store_ref.auto_tag_from_module(&ik, &mn)).await;
     });
 }
 
@@ -384,8 +381,16 @@ pub fn embed_verified_item(
     artifact_content: String,
 ) {
     tokio::spawn(async move {
-        use openproof_store::embeddings::{build_embedding_text, generate_embedding, EmbeddingStore};
-        let text = build_embedding_text(&label, &statement, &decl_kind, &module_name, &artifact_content);
+        use openproof_store::embeddings::{
+            build_embedding_text, generate_embedding, EmbeddingStore,
+        };
+        let text = build_embedding_text(
+            &label,
+            &statement,
+            &decl_kind,
+            &module_name,
+            &artifact_content,
+        );
         let Some(embedding) = generate_embedding(&text).await else {
             return; // No API key or API error -- skip silently
         };
@@ -394,7 +399,15 @@ pub fn embed_verified_item(
             Err(_) => return, // Qdrant not running -- skip silently
         };
         let _ = store
-            .upsert_item(&identity_key, &label, &statement, &decl_kind, &module_name, &artifact_content, embedding)
+            .upsert_item(
+                &identity_key,
+                &label,
+                &statement,
+                &decl_kind,
+                &module_name,
+                &artifact_content,
+                embedding,
+            )
             .await;
     });
 }
@@ -408,7 +421,9 @@ pub fn populate_knowledge_graph(store: &AppStore, session_id: &str) {
         for (path, _) in &files {
             if path.ends_with(".lean") && !path.contains("history/") {
                 if let Ok(content) = std::fs::read_to_string(ws_dir.join(path)) {
-                    if !all_lean.is_empty() { all_lean.push_str("\n\n"); }
+                    if !all_lean.is_empty() {
+                        all_lean.push_str("\n\n");
+                    }
                     all_lean.push_str(&content);
                 }
             }
@@ -422,15 +437,18 @@ pub fn populate_knowledge_graph(store: &AppStore, session_id: &str) {
     // Build identity keys matching the format used by record_verification_result:
     // user-verified/{session_id}/{label}/{hash_of_signature}
     let key_for = |name: &str, sig: &str| -> String {
-        format!("user-verified/{}/{}/{}",
+        format!(
+            "user-verified/{}/{}/{}",
             openproof_store::sanitize_identity_segment(session_id),
             openproof_store::sanitize_identity_segment(name),
             openproof_store::corpus_hash(sig),
         )
     };
     // Build a lookup from name -> (name, signature)
-    let sig_map: std::collections::HashMap<&str, &str> = parsed.iter()
-        .map(|d| (d.name.as_str(), d.signature.as_str())).collect();
+    let sig_map: std::collections::HashMap<&str, &str> = parsed
+        .iter()
+        .map(|d| (d.name.as_str(), d.signature.as_str()))
+        .collect();
     for decl in &parsed {
         let from_key = key_for(&decl.name, &decl.signature);
         for dep in openproof_lean::parse::extract_dependencies(&decl.body, &all_names, &decl.name) {
@@ -442,4 +460,3 @@ pub fn populate_knowledge_graph(store: &AppStore, session_id: &str) {
         let _ = store.auto_tag_from_module(&from_key, &decl.name);
     }
 }
-

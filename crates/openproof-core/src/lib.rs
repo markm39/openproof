@@ -10,7 +10,9 @@ mod reports;
 mod session;
 mod state;
 
-pub use commands::{build_focus_items, command_completions, delete_word_backward_pos, SLASH_COMMANDS};
+pub use commands::{
+    build_focus_items, command_completions, delete_word_backward_pos, SLASH_COMMANDS,
+};
 pub use helpers::default_session_with_workspace;
 pub use parser::{
     derive_goal_label, extract_latex_block, extract_lean_code_block, extract_lean_code_blocks,
@@ -113,7 +115,11 @@ theorem PrimeGapTarget : ∀ C : ℝ, 0 ≤ C → True := by
         );
         assert_eq!(session.proof.paper_notes.len(), 1);
         assert_eq!(
-            session.proof.nodes.first().map(|node| node.content.contains("theorem PrimeGapTarget")),
+            session
+                .proof
+                .nodes
+                .first()
+                .map(|node| node.content.contains("theorem PrimeGapTarget")),
             Some(true)
         );
     }
@@ -140,7 +146,9 @@ RECOMMENDED_OPTION: B
 
         assert!(state.has_open_question());
         assert_eq!(
-            state.selected_question_option().map(|option| option.id.as_str()),
+            state
+                .selected_question_option()
+                .map(|option| option.id.as_str()),
             Some("B")
         );
     }

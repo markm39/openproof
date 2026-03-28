@@ -22,7 +22,7 @@ pub fn read_lake_manifest(lean_project_dir: &Path) -> Result<(LakeManifest, Stri
     let manifest_path = lean_project_dir.join("lake-manifest.json");
     let raw = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("reading {}", manifest_path.display()))?;
-    let manifest: LakeManifest =
-        serde_json::from_str(&raw).with_context(|| format!("parsing {}", manifest_path.display()))?;
+    let manifest: LakeManifest = serde_json::from_str(&raw)
+        .with_context(|| format!("parsing {}", manifest_path.display()))?;
     Ok((manifest, raw))
 }

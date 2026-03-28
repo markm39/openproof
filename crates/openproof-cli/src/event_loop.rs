@@ -42,9 +42,7 @@ pub async fn run_app(
         if current_session_id != last_session_id {
             last_session_id = current_session_id;
             let size = terminal.size()?;
-            terminal.set_viewport_area(ratatui::layout::Rect::new(
-                0, 0, size.width, size.height,
-            ));
+            terminal.set_viewport_area(ratatui::layout::Rect::new(0, 0, size.width, size.height));
             let writer = terminal.backend_mut();
             write!(writer, "\x1b[r\x1b[0m\x1b[H\x1b[2J\x1b[3J\x1b[H")?;
             io::Write::flush(writer)?;
@@ -57,10 +55,15 @@ pub async fn run_app(
                 continue;
             }
             // Drop stale events from a cancelled turn
-            if !state.turn_in_flight && matches!(&event,
-                AppEvent::StreamDelta(_) | AppEvent::StreamFinished |
-                AppEvent::ReasoningStarted | AppEvent::ToolLoopIteration(_)
-            ) {
+            if !state.turn_in_flight
+                && matches!(
+                    &event,
+                    AppEvent::StreamDelta(_)
+                        | AppEvent::StreamFinished
+                        | AppEvent::ReasoningStarted
+                        | AppEvent::ToolLoopIteration(_)
+                )
+            {
                 continue;
             }
             let verification_result = match &event {
@@ -87,9 +90,8 @@ pub async fn run_app(
                 _ => None,
             };
             if let Some(write) = state.apply(event.clone()) {
-                let verification_session = verification_result
-                    .as_ref()
-                    .map(|_| write.session.clone());
+                let verification_session =
+                    verification_result.as_ref().map(|_| write.session.clone());
                 persist_write(tx.clone(), store.clone(), write);
                 if let (Some(result), Some(session)) = (verification_result, verification_session) {
                     let verified_ok = result.ok;
@@ -121,16 +123,13 @@ pub async fn run_app(
                 {
                     let _ = tx.send(AppEvent::AutonomousTick);
                 }
-                if let Some(branch) = state
-                    .current_session()
-                    .and_then(|session| {
-                        session
-                            .proof
-                            .branches
-                            .iter()
-                            .find(|branch| branch.id == branch_id)
-                    })
-                {
+                if let Some(branch) = state.current_session().and_then(|session| {
+                    session
+                        .proof
+                        .branches
+                        .iter()
+                        .find(|branch| branch.id == branch_id)
+                }) {
                     if branch.hidden
                         && should_promote_hidden_branch(
                             state
@@ -139,12 +138,9 @@ pub async fn run_app(
                             current_foreground_branch(state.current_session()).cloned(),
                         )
                     {
-                        if let Some(candidate_id) = state
-                            .current_session()
-                            .and_then(|session| {
-                                best_hidden_branch(session).map(|branch| branch.id.clone())
-                            })
-                        {
+                        if let Some(candidate_id) = state.current_session().and_then(|session| {
+                            best_hidden_branch(session).map(|branch| branch.id.clone())
+                        }) {
                             if let Ok(write) =
                                 state.promote_branch_to_foreground(&candidate_id, false, None)
                             {
@@ -197,15 +193,23 @@ pub async fn run_app(
                     // Create a node if none exist (headless fallback equivalent)
                     if session.proof.nodes.is_empty() {
                         eprintln!("[tui-sync] Creating node (nodes empty, finished={is_turn_finished}, assistant={is_assistant_append})");
-                        let label = if session.title != "OpenProof Rust Session" && !session.title.trim().is_empty() {
+                        let label = if session.title != "OpenProof Rust Session"
+                            && !session.title.trim().is_empty()
+                        {
                             session.title.clone()
                         } else {
-                            session.proof.accepted_target.as_ref()
+                            session
+                                .proof
+                                .accepted_target
+                                .as_ref()
                                 .or(session.proof.formal_target.as_ref())
                                 .cloned()
                                 .unwrap_or_else(|| "Goal".to_string())
                         };
-                        let statement = session.proof.accepted_target.as_ref()
+                        let statement = session
+                            .proof
+                            .accepted_target
+                            .as_ref()
                             .or(session.proof.formal_target.as_ref())
                             .or(session.proof.problem.as_ref())
                             .cloned()
@@ -242,46 +246,69 @@ pub async fn run_app(
                             let parsed = openproof_lean::parse_lean_declarations(&all_lean);
                             if !parsed.is_empty() {
                                 let now = chrono::Utc::now().to_rfc3339();
-                                let parsed_nodes = openproof_lean::declarations_to_proof_nodes(
-                                    &parsed, &s.id,
-                                );
+                                let parsed_nodes =
+                                    openproof_lean::declarations_to_proof_nodes(&parsed, &s.id);
                                 // Preserve status of existing nodes by label
-                                let old_statuses: std::collections::HashMap<String, openproof_protocol::ProofNodeStatus> =
-                                    s.proof.nodes.iter().map(|n| (n.label.clone(), n.status)).collect();
-                                let active_label = s.proof.active_node_id.as_deref()
+                                let old_statuses: std::collections::HashMap<
+                                    String,
+                                    openproof_protocol::ProofNodeStatus,
+                                > = s
+                                    .proof
+                                    .nodes
+                                    .iter()
+                                    .map(|n| (n.label.clone(), n.status))
+                                    .collect();
+                                let active_label = s
+                                    .proof
+                                    .active_node_id
+                                    .as_deref()
                                     .and_then(|id| s.proof.nodes.iter().find(|n| n.id == id))
                                     .map(|n| n.label.clone());
 
-                                s.proof.nodes = parsed_nodes.iter().map(|pn| {
-                                    let mut node = pn.clone();
-                                    // Preserve old Verified status, but re-evaluate Failed
-                                    if let Some(&prev) = old_statuses.get(&node.label) {
-                                        if prev == openproof_protocol::ProofNodeStatus::Verified
-                                            && !node.content.contains("sorry")
-                                        {
-                                            node.status = prev;
+                                s.proof.nodes = parsed_nodes
+                                    .iter()
+                                    .map(|pn| {
+                                        let mut node = pn.clone();
+                                        // Preserve old Verified status, but re-evaluate Failed
+                                        if let Some(&prev) = old_statuses.get(&node.label) {
+                                            if prev == openproof_protocol::ProofNodeStatus::Verified
+                                                && !node.content.contains("sorry")
+                                            {
+                                                node.status = prev;
+                                            }
                                         }
-                                    }
-                                    // Mark sorry-containing nodes as Proving (needs work)
-                                    // Mark sorry-free nodes as Proving (needs verification)
-                                    if node.content.contains("sorry") {
-                                        node.status = openproof_protocol::ProofNodeStatus::Proving;
-                                    } else if !node.content.trim().is_empty() {
-                                        node.status = openproof_protocol::ProofNodeStatus::Proving;
-                                    }
-                                    node.updated_at = now.clone();
-                                    node
-                                }).collect();
+                                        // Mark non-empty nodes as Proving (needs verification)
+                                        if node.content.contains("sorry")
+                                            || !node.content.trim().is_empty()
+                                        {
+                                            node.status =
+                                                openproof_protocol::ProofNodeStatus::Proving;
+                                        }
+                                        node.updated_at = now.clone();
+                                        node
+                                    })
+                                    .collect();
 
                                 // Restore active node by label
                                 if let Some(label) = &active_label {
-                                    s.proof.active_node_id = s.proof.nodes.iter()
-                                        .find(|n| &n.label == label).map(|n| n.id.clone());
+                                    s.proof.active_node_id = s
+                                        .proof
+                                        .nodes
+                                        .iter()
+                                        .find(|n| &n.label == label)
+                                        .map(|n| n.id.clone());
                                 }
                                 if s.proof.active_node_id.is_none() {
                                     // Prefer first unverified root node
-                                    s.proof.active_node_id = s.proof.nodes.iter()
-                                        .find(|n| n.depth == 0 && n.status != openproof_protocol::ProofNodeStatus::Verified)
+                                    s.proof.active_node_id = s
+                                        .proof
+                                        .nodes
+                                        .iter()
+                                        .find(|n| {
+                                            n.depth == 0
+                                                && n.status
+                                                    != openproof_protocol::ProofNodeStatus::Verified
+                                        })
                                         .or_else(|| s.proof.nodes.first())
                                         .map(|n| n.id.clone());
                                 }
@@ -292,7 +319,9 @@ pub async fn run_app(
 
                             // Also store the full workspace content on the active node
                             if let Some(node_id) = s.proof.active_node_id.clone() {
-                                if let Some(node) = s.proof.nodes.iter_mut().find(|n| n.id == node_id) {
+                                if let Some(node) =
+                                    s.proof.nodes.iter_mut().find(|n| n.id == node_id)
+                                {
                                     if node.content.trim().is_empty() {
                                         node.content = all_lean.clone();
                                     }
@@ -304,7 +333,10 @@ pub async fn run_app(
                                 // Try TITLE: marker in Lean comments
                                 for line in all_lean.lines() {
                                     let trimmed = line.trim();
-                                    if let Some(title) = trimmed.strip_prefix("TITLE:").or_else(|| trimmed.strip_prefix("TITLE :")) {
+                                    if let Some(title) = trimmed
+                                        .strip_prefix("TITLE:")
+                                        .or_else(|| trimmed.strip_prefix("TITLE :"))
+                                    {
                                         let title = title.trim();
                                         if !title.is_empty() {
                                             s.title = title.to_string();
@@ -313,13 +345,17 @@ pub async fn run_app(
                                     }
                                 }
                                 // Also try extracting from LaTeX \title{...} in paper_tex
-                                if s.title == "OpenProof Rust Session" || s.title.trim().is_empty() {
+                                if s.title == "OpenProof Rust Session" || s.title.trim().is_empty()
+                                {
                                     if let Some(start) = s.proof.paper_tex.find("\\title{") {
                                         let after = &s.proof.paper_tex[start + 7..];
                                         if let Some(end) = after.find('}') {
                                             let title = after[..end].trim();
                                             if !title.is_empty() {
-                                                s.title = title.replace("\\(", "").replace("\\)", "").to_string();
+                                                s.title = title
+                                                    .replace("\\(", "")
+                                                    .replace("\\)", "")
+                                                    .to_string();
                                             }
                                         }
                                     }
@@ -329,7 +365,9 @@ pub async fn run_app(
                         if let Some(session) = state.current_session().cloned() {
                             let s = store.clone();
                             tokio::spawn(async move {
-                                let _ = tokio::task::spawn_blocking(move || s.save_session(&session)).await;
+                                let _ =
+                                    tokio::task::spawn_blocking(move || s.save_session(&session))
+                                        .await;
                             });
                         }
                     }
@@ -340,7 +378,10 @@ pub async fn run_app(
             if is_assistant_append && !state.verification_in_flight {
                 // Extract what we need before mutating state.
                 let verify_info = state.current_session().and_then(|s| {
-                    let node = s.proof.active_node_id.as_deref()
+                    let node = s
+                        .proof
+                        .active_node_id
+                        .as_deref()
                         .and_then(|id| s.proof.nodes.iter().find(|n| n.id == id))?;
                     if node.status == openproof_protocol::ProofNodeStatus::Proving
                         && !node.content.trim().is_empty()
@@ -358,19 +399,21 @@ pub async fn run_app(
                     tokio::spawn(async move {
                         let result = tokio::task::spawn_blocking(move || {
                             openproof_lean::verify_scratch_content(
-                                &lean_dir, &node_content, None, &imports,
+                                &lean_dir,
+                                &node_content,
+                                None,
+                                &imports,
                             )
                         })
                         .await
                         .ok()
                         .and_then(|r| r.ok());
-                        let summary = result.unwrap_or_else(|| {
-                            openproof_protocol::LeanVerificationSummary {
+                        let summary =
+                            result.unwrap_or_else(|| openproof_protocol::LeanVerificationSummary {
                                 ok: false,
                                 error: Some("Lean verification failed to run".to_string()),
                                 ..Default::default()
-                            }
-                        });
+                            });
                         let _ = tx_v.send(AppEvent::LeanVerifyFinished(summary));
                     });
                 }
@@ -383,17 +426,15 @@ pub async fn run_app(
                 let transcript_len = session.transcript.len();
                 let flushable = transcript_len.saturating_sub(1);
                 if flushable > state.flushed_turn_count {
-                    let entries_to_flush: Vec<_> = session.transcript
-                        [state.flushed_turn_count..flushable]
-                        .to_vec();
+                    let entries_to_flush: Vec<_> =
+                        session.transcript[state.flushed_turn_count..flushable].to_vec();
                     let mut lines = Vec::new();
                     for entry in &entries_to_flush {
                         lines.extend(openproof_tui::render_entry(entry));
                     }
                     if !lines.is_empty() {
-                        let _ = openproof_tui::insert_history::insert_history_lines(
-                            terminal, lines,
-                        );
+                        let _ =
+                            openproof_tui::insert_history::insert_history_lines(terminal, lines);
                     }
                     state.flushed_turn_count = flushable;
                 }
@@ -466,7 +507,10 @@ fn handle_normal_mode_key(
         KeyCode::BackTab => {
             // Shift+Tab: cycle autonomous mode (off -> normal -> full -> off)
             if let Some(session) = state.current_session_mut() {
-                let (new_running, new_full, label) = match (session.proof.is_autonomous_running, session.proof.full_autonomous) {
+                let (new_running, new_full, label) = match (
+                    session.proof.is_autonomous_running,
+                    session.proof.full_autonomous,
+                ) {
                     (false, _) => (true, false, "autonomous on"),
                     (true, false) => (true, true, "full autonomous on"),
                     (true, true) => (false, false, "autonomous off"),
@@ -546,8 +590,7 @@ fn handle_normal_mode_key(
             Some(AppEvent::DeleteWordBackward)
         }
         KeyCode::Char('/')
-            if state.composer.is_empty()
-                && !key.modifiers.contains(KeyModifiers::CONTROL) =>
+            if state.composer.is_empty() && !key.modifiers.contains(KeyModifiers::CONTROL) =>
         {
             state.command_mode = true;
             state.command_buffer.clear();

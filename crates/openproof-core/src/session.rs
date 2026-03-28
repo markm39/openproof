@@ -28,9 +28,7 @@ impl AppState {
 
     pub fn has_open_question(&self) -> bool {
         self.pending_question()
-            .map(|question| {
-                question.status != "resolved" && !question.options.is_empty()
-            })
+            .map(|question| question.status != "resolved" && !question.options.is_empty())
             .unwrap_or(false)
     }
 
@@ -223,10 +221,7 @@ impl AppState {
         Ok(PendingWrite { session: snapshot })
     }
 
-    pub fn set_private_overlay_community(
-        &mut self,
-        enabled: bool,
-    ) -> Result<PendingWrite, String> {
+    pub fn set_private_overlay_community(&mut self, enabled: bool) -> Result<PendingWrite, String> {
         let timestamp = Utc::now().to_rfc3339();
         let snapshot = {
             let Some(session) = self.current_session_mut() else {

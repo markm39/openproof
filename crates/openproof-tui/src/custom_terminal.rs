@@ -96,7 +96,9 @@ impl<B: Backend + Write> Drop for CustomTerminal<B> {
 impl<B: Backend + Write> CustomTerminal<B> {
     pub fn with_options(mut backend: B) -> io::Result<Self> {
         let screen_size = backend.size()?;
-        let cursor_pos = backend.get_cursor_position().unwrap_or(Position { x: 0, y: 0 });
+        let cursor_pos = backend
+            .get_cursor_position()
+            .unwrap_or(Position { x: 0, y: 0 });
         Ok(Self {
             backend,
             buffers: [Buffer::empty(Rect::ZERO), Buffer::empty(Rect::ZERO)],
@@ -206,12 +208,7 @@ impl<B: Backend + Write> CustomTerminal<B> {
             self.last_known_screen_size = screen_size;
             // Recompute viewport to fill the terminal from the current y position
             let height = screen_size.height.saturating_sub(self.viewport_area.y);
-            let new_area = Rect::new(
-                0,
-                self.viewport_area.y,
-                screen_size.width,
-                height,
-            );
+            let new_area = Rect::new(0, self.viewport_area.y, screen_size.width, height);
             self.set_viewport_area(new_area);
         }
         Ok(())
@@ -280,10 +277,7 @@ impl<B: Backend + Write> CustomTerminal<B> {
     /// Push lines into terminal scrollback by scrolling the viewport area up.
     /// This is what makes the native scrollbar work -- content moves from the
     /// viewport into the terminal's scrollback buffer.
-    pub fn scroll_region_up(
-        &mut self,
-        rows_to_scroll: u16,
-    ) -> io::Result<()> {
+    pub fn scroll_region_up(&mut self, rows_to_scroll: u16) -> io::Result<()> {
         if rows_to_scroll == 0 || self.viewport_area.is_empty() {
             return Ok(());
         }
@@ -348,7 +342,10 @@ where
                     modifier = cell.modifier;
                 }
                 if cell.fg != fg || cell.bg != bg {
-                    queue!(writer, SetColors(Colors::new(cell.fg.into(), cell.bg.into())))?;
+                    queue!(
+                        writer,
+                        SetColors(Colors::new(cell.fg.into(), cell.bg.into()))
+                    )?;
                     fg = cell.fg;
                     bg = cell.bg;
                 }

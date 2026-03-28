@@ -52,9 +52,7 @@ pub enum SearchResult {
         file_content: String,
     },
     /// No progress possible -- all candidates exhausted.
-    Exhausted {
-        expansions: usize,
-    },
+    Exhausted { expansions: usize },
     /// Time limit hit.
     Timeout {
         best_tactics: Vec<String>,

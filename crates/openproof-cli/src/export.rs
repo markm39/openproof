@@ -208,8 +208,8 @@ pub fn export_session_artifacts(
             .and_then(|id| session.proof.branches.iter().find(|branch| branch.id == id))
         {
             if !branch.lean_snippet.trim().is_empty() {
-                let path = export_dir
-                    .join(format!("{}_branch.lean", sanitize_file_stem(&branch.title)));
+                let path =
+                    export_dir.join(format!("{}_branch.lean", sanitize_file_stem(&branch.title)));
                 fs::write(&path, branch.lean_snippet.trim())?;
                 written.push(path.display().to_string());
             }

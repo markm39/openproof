@@ -4,7 +4,7 @@ use openproof_protocol::{
 };
 
 use crate::helpers::{agent_role_label, next_id, summarize_lean_error};
-use crate::state::{AppState, AppEvent, PendingWrite};
+use crate::state::{AppEvent, AppState, PendingWrite};
 
 impl AppState {
     pub(crate) fn apply_turn_started(&mut self) {
@@ -95,33 +95,42 @@ impl AppState {
             // wipe multi-theorem sessions.
             let parsed_decls = openproof_lean::parse_lean_declarations(&result.rendered_scratch);
             if !parsed_decls.is_empty() && parsed_decls.len() >= session.proof.nodes.len() {
-                let parsed_nodes = openproof_lean::declarations_to_proof_nodes(
-                    &parsed_decls,
-                    &session.id,
-                );
+                let parsed_nodes =
+                    openproof_lean::declarations_to_proof_nodes(&parsed_decls, &session.id);
                 let old_statuses: std::collections::HashMap<String, ProofNodeStatus> = session
-                    .proof.nodes.iter()
+                    .proof
+                    .nodes
+                    .iter()
                     .map(|n| (n.label.clone(), n.status))
                     .collect();
-                let active_label = session.proof.active_node_id.as_deref()
+                let active_label = session
+                    .proof
+                    .active_node_id
+                    .as_deref()
                     .and_then(|id| session.proof.nodes.iter().find(|n| n.id == id))
                     .map(|n| n.label.clone());
 
-                session.proof.nodes = parsed_nodes.iter().map(|pn| {
-                    let mut node = pn.clone();
-                    if result.ok {
-                        if let Some(&prev_status) = old_statuses.get(&node.label) {
-                            if prev_status != ProofNodeStatus::Pending {
-                                node.status = prev_status;
+                session.proof.nodes = parsed_nodes
+                    .iter()
+                    .map(|pn| {
+                        let mut node = pn.clone();
+                        if result.ok {
+                            if let Some(&prev_status) = old_statuses.get(&node.label) {
+                                if prev_status != ProofNodeStatus::Pending {
+                                    node.status = prev_status;
+                                }
                             }
                         }
-                    }
-                    node.updated_at = now.clone();
-                    node
-                }).collect();
+                        node.updated_at = now.clone();
+                        node
+                    })
+                    .collect();
 
                 if let Some(label) = &active_label {
-                    session.proof.active_node_id = session.proof.nodes.iter()
+                    session.proof.active_node_id = session
+                        .proof
+                        .nodes
+                        .iter()
                         .find(|n| &n.label == label)
                         .map(|n| n.id.clone());
                 }
@@ -153,10 +162,17 @@ impl AppState {
             }
 
             // Phase from aggregate status
-            let all_verified = session.proof.nodes.iter()
+            let all_verified = session
+                .proof
+                .nodes
+                .iter()
                 .all(|n| n.status == ProofNodeStatus::Verified);
-            let verified_count = session.proof.nodes.iter()
-                .filter(|n| n.status == ProofNodeStatus::Verified).count();
+            let verified_count = session
+                .proof
+                .nodes
+                .iter()
+                .filter(|n| n.status == ProofNodeStatus::Verified)
+                .count();
             let total = session.proof.nodes.len();
             session.proof.phase = if all_verified && total > 0 {
                 "done".to_string()
@@ -244,14 +260,15 @@ impl AppState {
         if let Some(snapshot) = self.current_session_mut().map(|session| {
             // Parse Lean declarations from the rendered scratch to build proof tree
             if !result.rendered_scratch.is_empty() {
-                let parsed_decls = openproof_lean::parse_lean_declarations(&result.rendered_scratch);
+                let parsed_decls =
+                    openproof_lean::parse_lean_declarations(&result.rendered_scratch);
                 if !parsed_decls.is_empty() {
-                    let parsed_nodes = openproof_lean::declarations_to_proof_nodes(
-                        &parsed_decls,
-                        &session.id,
-                    );
+                    let parsed_nodes =
+                        openproof_lean::declarations_to_proof_nodes(&parsed_decls, &session.id);
                     for pn in &parsed_nodes {
-                        if let Some(existing) = session.proof.nodes.iter_mut().find(|n| n.label == pn.label) {
+                        if let Some(existing) =
+                            session.proof.nodes.iter_mut().find(|n| n.label == pn.label)
+                        {
                             existing.content = pn.content.clone();
                             existing.statement = pn.statement.clone();
                             existing.kind = pn.kind;
@@ -370,7 +387,9 @@ impl AppState {
                     if root_target_verified {
                         100.0
                     } else {
-                        branch.score.max(72.0 + (branch.attempt_count.min(8) as f32 * 3.0))
+                        branch
+                            .score
+                            .max(72.0 + (branch.attempt_count.min(8) as f32 * 3.0))
                     }
                 } else {
                     (branch.score - 4.0).max(0.0)
@@ -396,13 +415,7 @@ impl AppState {
             };
             session.proof.goal_summary = focus_node_id
                 .as_deref()
-                .and_then(|node_id| {
-                    session
-                        .proof
-                        .nodes
-                        .iter()
-                        .find(|node| node.id == node_id)
-                })
+                .and_then(|node_id| session.proof.nodes.iter().find(|node| node.id == node_id))
                 .map(|node| node.statement.clone())
                 .or_else(|| session.proof.goal_summary.clone());
             session.proof.status_line = status_line.clone();
@@ -432,8 +445,9 @@ impl AppState {
 
             if let Some(promote_branch_id) = promote_target {
                 let previous_active = session.proof.active_foreground_branch_id.clone();
-                if let Some(previous_id) =
-                    previous_active.as_deref().filter(|id| *id != promote_branch_id)
+                if let Some(previous_id) = previous_active
+                    .as_deref()
+                    .filter(|id| *id != promote_branch_id)
                 {
                     if let Some(previous) = session
                         .proof

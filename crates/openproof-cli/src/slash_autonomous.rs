@@ -14,7 +14,11 @@ pub fn cmd_autonomous(
     store: AppStore,
     arg_text: &str,
 ) {
-    let subcommand = if arg_text.is_empty() { "status" } else { arg_text };
+    let subcommand = if arg_text.is_empty() {
+        "status"
+    } else {
+        arg_text
+    };
     match subcommand {
         "status" => {
             let content = state
@@ -118,10 +122,8 @@ pub fn cmd_autonomous(
                     return;
                 }
             };
-            if let Some(reason) =
-                crate::helpers::autonomous_stop_reason(&session).filter(|reason| {
-                    !reason.contains("completed the current proof run")
-                })
+            if let Some(reason) = crate::helpers::autonomous_stop_reason(&session)
+                .filter(|reason| !reason.contains("completed the current proof run"))
             {
                 emit_local_notice(tx, state, store, "Autonomous Error", reason);
                 return;
@@ -169,7 +171,13 @@ pub fn cmd_autonomous(
             let session = match state.current_session().cloned() {
                 Some(s) => s,
                 None => {
-                    emit_local_notice(tx, state, store, "Autonomous Error", "No active session.".to_string());
+                    emit_local_notice(
+                        tx,
+                        state,
+                        store,
+                        "Autonomous Error",
+                        "No active session.".to_string(),
+                    );
                     return;
                 }
             };
@@ -177,10 +185,18 @@ pub fn cmd_autonomous(
             match state.set_autonomous_run_state(AutonomousRunPatch {
                 is_autonomous_running: Some(true),
                 autonomous_started_at: Some(Some(
-                    session.proof.autonomous_started_at.clone().unwrap_or(now.clone()),
+                    session
+                        .proof
+                        .autonomous_started_at
+                        .clone()
+                        .unwrap_or(now.clone()),
                 )),
                 autonomous_last_progress_at: Some(
-                    session.proof.autonomous_last_progress_at.clone().or(Some(now)),
+                    session
+                        .proof
+                        .autonomous_last_progress_at
+                        .clone()
+                        .or(Some(now)),
                 ),
                 autonomous_pause_reason: Some(None),
                 autonomous_stop_reason: Some(None),
@@ -216,12 +232,10 @@ pub fn cmd_autonomous(
             }
             Err(error) => emit_local_notice(tx, state, store, "Autonomous Error", error),
         },
-        "step" => {
-            match crate::autonomous::run_autonomous_step(tx.clone(), store.clone(), state) {
-                Ok(message) => emit_local_notice(tx, state, store, "Autonomous", message),
-                Err(error) => emit_local_notice(tx, state, store, "Autonomous Error", error),
-            }
-        }
+        "step" => match crate::autonomous::run_autonomous_step(tx.clone(), store.clone(), state) {
+            Ok(message) => emit_local_notice(tx, state, store, "Autonomous", message),
+            Err(error) => emit_local_notice(tx, state, store, "Autonomous Error", error),
+        },
         _ => emit_local_notice(
             tx,
             state,
@@ -281,7 +295,13 @@ pub fn cmd_answer(
                 session: submitted.session_snapshot.clone(),
             },
         );
-        handle_submission(tx, store, state, submitted, std::sync::Arc::new(std::sync::OnceLock::new()));
+        handle_submission(
+            tx,
+            store,
+            state,
+            submitted,
+            std::sync::Arc::new(std::sync::OnceLock::new()),
+        );
     } else {
         emit_local_notice(
             tx,
@@ -334,7 +354,13 @@ pub fn start_verify_active_node(
     let session = match state.current_session().cloned() {
         Some(session) => session,
         None => {
-            emit_local_notice(tx, state, store, "Verify Error", "No active session.".to_string());
+            emit_local_notice(
+                tx,
+                state,
+                store,
+                "Verify Error",
+                "No active session.".to_string(),
+            );
             return;
         }
     };

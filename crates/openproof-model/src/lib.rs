@@ -202,7 +202,11 @@ pub enum TurnMessage {
     /// A regular chat message (user, assistant, system/developer).
     Chat { role: String, content: String },
     /// A function call the model made (must be included before the result).
-    FunctionCall { call_id: String, name: String, arguments: String },
+    FunctionCall {
+        call_id: String,
+        name: String,
+        arguments: String,
+    },
     /// A tool result returned after executing a tool call.
     ToolResult { call_id: String, output: String },
 }
@@ -329,7 +333,11 @@ fn serialize_turn_message(message: &TurnMessage) -> Value {
                 })
             }
         }
-        TurnMessage::FunctionCall { call_id, name, arguments } => {
+        TurnMessage::FunctionCall {
+            call_id,
+            name,
+            arguments,
+        } => {
             json!({
                 "type": "function_call",
                 "call_id": call_id,
@@ -451,7 +459,11 @@ pub enum StreamEvent {
     /// Streaming arguments delta for an in-progress tool call.
     ToolCallArgsDelta { call_id: String, delta: String },
     /// A tool call is complete with its full arguments.
-    ToolCallDone { call_id: String, name: String, arguments: String },
+    ToolCallDone {
+        call_id: String,
+        name: String,
+        arguments: String,
+    },
 }
 
 async fn read_event_stream_with_callback(
@@ -508,11 +520,17 @@ pub async fn run_codex_turn_with_events(
                 .context("Missing ChatGPT tokens in synced auth state.")?;
             response = client
                 .post(format!("{OPENAI_CODEX_BASE_URL}/responses"))
-                .header("authorization", format!("Bearer {}", retry_tokens.access_token))
+                .header(
+                    "authorization",
+                    format!("Bearer {}", retry_tokens.access_token),
+                )
                 .header("content-type", "application/json")
                 .header("accept", "text/event-stream")
                 .header("originator", DEFAULT_ORIGINATOR)
-                .header("chatgpt-account-id", retry_tokens.account_id.clone().unwrap_or_default())
+                .header(
+                    "chatgpt-account-id",
+                    retry_tokens.account_id.clone().unwrap_or_default(),
+                )
                 .header("session_id", request.session_id)
                 .json(&payload)
                 .send()
@@ -564,9 +582,11 @@ async fn read_event_stream_with_events(
                 }
 
                 // Text output delta
-                if let Some(delta) = event.get("delta").and_then(Value::as_str).filter(|_| {
-                    event_type == "response.output_text.delta"
-                }) {
+                if let Some(delta) = event
+                    .get("delta")
+                    .and_then(Value::as_str)
+                    .filter(|_| event_type == "response.output_text.delta")
+                {
                     full_text.push_str(delta);
                     on_event(StreamEvent::TextDelta(delta.to_string()));
                 }
@@ -576,10 +596,24 @@ async fn read_event_stream_with_events(
                     if let Some(item) = event.get("item") {
                         let item_type = item.get("type").and_then(Value::as_str).unwrap_or("");
                         if item_type == "function_call" {
-                            let call_id = item.get("call_id").and_then(Value::as_str).unwrap_or("").to_string();
-                            let name = item.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-                            let output_index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
-                            pending_calls.insert(output_index, (call_id.clone(), name.clone(), String::new()));
+                            let call_id = item
+                                .get("call_id")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            let name = item
+                                .get("name")
+                                .and_then(Value::as_str)
+                                .unwrap_or("")
+                                .to_string();
+                            let output_index = event
+                                .get("output_index")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(0);
+                            pending_calls.insert(
+                                output_index,
+                                (call_id.clone(), name.clone(), String::new()),
+                            );
                             on_event(StreamEvent::ToolCallStart { call_id, name });
                         }
                     }
@@ -587,7 +621,10 @@ async fn read_event_stream_with_events(
 
                 // Tool call: streaming argument deltas
                 if event_type == "response.function_call_arguments.delta" {
-                    let output_index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
+                    let output_index = event
+                        .get("output_index")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
                     let delta = event.get("delta").and_then(Value::as_str).unwrap_or("");
                     if let Some(entry) = pending_calls.get_mut(&output_index) {
                         entry.2.push_str(delta);
@@ -600,7 +637,10 @@ async fn read_event_stream_with_events(
 
                 // Tool call: arguments complete
                 if event_type == "response.function_call_arguments.done" {
-                    let output_index = event.get("output_index").and_then(Value::as_u64).unwrap_or(0);
+                    let output_index = event
+                        .get("output_index")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
                     if let Some((call_id, name, args)) = pending_calls.remove(&output_index) {
                         let final_args = event
                             .get("arguments")
@@ -691,10 +731,26 @@ fn extract_tool_calls(value: &Value) -> Vec<ToolCall> {
     for item in output {
         let item_type = item.get("type").and_then(Value::as_str).unwrap_or("");
         if item_type == "function_call" {
-            let call_id = item.get("call_id").and_then(Value::as_str).unwrap_or("").to_string();
-            let name = item.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-            let arguments = item.get("arguments").and_then(Value::as_str).unwrap_or("{}").to_string();
-            calls.push(ToolCall { call_id, name, arguments });
+            let call_id = item
+                .get("call_id")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let name = item
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_string();
+            let arguments = item
+                .get("arguments")
+                .and_then(Value::as_str)
+                .unwrap_or("{}")
+                .to_string();
+            calls.push(ToolCall {
+                call_id,
+                name,
+                arguments,
+            });
         }
     }
     calls

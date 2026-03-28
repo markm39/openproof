@@ -6,10 +6,10 @@
 
 use crate::helpers::{emit_local_notice, persist_write};
 use crossterm::event::{self, KeyCode, KeyModifiers};
+use openproof_core::AppEvent;
 use openproof_core::AppState;
 use openproof_store::AppStore;
 use tokio::sync::mpsc;
-use openproof_core::AppEvent;
 
 pub fn handle_overlay_key(
     key: event::KeyEvent,
@@ -43,13 +43,7 @@ pub fn handle_overlay_key(
                             state.sync_question_selection();
                         }
                         Err(e) => {
-                            emit_local_notice(
-                                tx.clone(),
-                                state,
-                                store.clone(),
-                                "Resume Error",
-                                e,
-                            );
+                            emit_local_notice(tx.clone(), state, store.clone(), "Resume Error", e);
                         }
                     }
                 }
@@ -59,21 +53,22 @@ pub fn handle_overlay_key(
                 state.overlay = Some(openproof_core::Overlay::SessionPicker { selected });
             }
         },
-        openproof_core::Overlay::FocusPicker { items, mut selected } => match key.code {
+        openproof_core::Overlay::FocusPicker {
+            items,
+            mut selected,
+        } => match key.code {
             KeyCode::Esc => {
                 // Close without action.
             }
             KeyCode::Up => {
                 selected = selected.saturating_sub(1);
-                state.overlay =
-                    Some(openproof_core::Overlay::FocusPicker { items, selected });
+                state.overlay = Some(openproof_core::Overlay::FocusPicker { items, selected });
             }
             KeyCode::Down => {
                 if selected + 1 < items.len() {
                     selected += 1;
                 }
-                state.overlay =
-                    Some(openproof_core::Overlay::FocusPicker { items, selected });
+                state.overlay = Some(openproof_core::Overlay::FocusPicker { items, selected });
             }
             KeyCode::Enter => {
                 if let Some((id, _label, _kind)) = items.get(selected) {
@@ -90,20 +85,13 @@ pub fn handle_overlay_key(
                         }
                         Ok(None) => {}
                         Err(e) => {
-                            emit_local_notice(
-                                tx.clone(),
-                                state,
-                                store.clone(),
-                                "Focus Error",
-                                e,
-                            );
+                            emit_local_notice(tx.clone(), state, store.clone(), "Focus Error", e);
                         }
                     }
                 }
             }
             _ => {
-                state.overlay =
-                    Some(openproof_core::Overlay::FocusPicker { items, selected });
+                state.overlay = Some(openproof_core::Overlay::FocusPicker { items, selected });
             }
         },
     }
@@ -150,7 +138,7 @@ pub fn handle_command_mode_key(
                             session: submission.session_snapshot.clone(),
                         },
                     );
-                                        handle_submission(tx.clone(), store.clone(), state, submission, prover.clone());
+                    handle_submission(tx.clone(), store.clone(), state, submission, prover.clone());
                 }
             }
         }
@@ -197,8 +185,7 @@ pub fn handle_command_mode_key(
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.command_buffer.drain(..state.command_cursor);
             state.command_cursor = 0;
-            state.command_completions =
-                openproof_core::command_completions(&state.command_buffer);
+            state.command_completions = openproof_core::command_completions(&state.command_buffer);
             state.completion_idx = None;
         }
         KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -217,8 +204,7 @@ pub fn handle_command_mode_key(
         KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.command_buffer.insert(state.command_cursor, c);
             state.command_cursor += c.len_utf8();
-            state.command_completions =
-                openproof_core::command_completions(&state.command_buffer);
+            state.command_completions = openproof_core::command_completions(&state.command_buffer);
             state.completion_idx = None;
         }
         KeyCode::Backspace => {

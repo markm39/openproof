@@ -29,7 +29,14 @@ impl AppState {
         [
             format!("Session: {}", session.title),
             format!("Share mode: {:?}", session.cloud.share_mode),
-            format!("Sync enabled: {}", if session.cloud.sync_enabled { "yes" } else { "no" }),
+            format!(
+                "Sync enabled: {}",
+                if session.cloud.sync_enabled {
+                    "yes"
+                } else {
+                    "no"
+                }
+            ),
             format!("Proof phase: {}", session.proof.phase),
             format!("Status: {}", session.proof.status_line),
             format!(
@@ -65,16 +72,17 @@ impl AppState {
             format!(
                 "Active branch: {}",
                 active_branch
-                    .map(|branch| format!("{} [{}]", branch.title, format_agent_status(branch.status)))
+                    .map(|branch| format!(
+                        "{} [{}]",
+                        branch.title,
+                        format_agent_status(branch.status)
+                    ))
                     .unwrap_or_else(|| "none".to_string())
             ),
             format!("Proof nodes: {}", session.proof.nodes.len()),
             format!("Branches: {}", session.proof.branches.len()),
             format!("Agents: {}", session.proof.agents.len()),
-            format!(
-                "Paper notes: {}",
-                session.proof.paper_notes.len()
-            ),
+            format!("Paper notes: {}", session.proof.paper_notes.len()),
             format!(
                 "Pending question: {}",
                 session
@@ -86,7 +94,11 @@ impl AppState {
             ),
             format!(
                 "Awaiting clarification: {}",
-                if session.proof.awaiting_clarification { "yes" } else { "no" }
+                if session.proof.awaiting_clarification {
+                    "yes"
+                } else {
+                    "no"
+                }
             ),
             format!(
                 "Autonomous: {}",
@@ -114,7 +126,11 @@ impl AppState {
             format!("Failed nodes: {}", failing),
             format!(
                 "Assistant turn: {}",
-                if self.turn_in_flight { "running" } else { "idle" }
+                if self.turn_in_flight {
+                    "running"
+                } else {
+                    "idle"
+                }
             ),
             format!(
                 "Lean verify: {}",
@@ -127,7 +143,10 @@ impl AppState {
             format!(
                 "Auth: {}",
                 if self.auth.logged_in {
-                    self.auth.email.clone().unwrap_or_else(|| "logged in".to_string())
+                    self.auth
+                        .email
+                        .clone()
+                        .unwrap_or_else(|| "logged in".to_string())
                 } else {
                     "logged out".to_string()
                 }

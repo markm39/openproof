@@ -10,8 +10,7 @@ pub use search::*;
 
 use openproof_cloud::CloudCorpusClient;
 use openproof_protocol::{
-    CloudCorpusAuthContext, CloudCorpusSearchHit, IngestLibrarySeedResult,
-    ShareMode,
+    CloudCorpusAuthContext, CloudCorpusSearchHit, IngestLibrarySeedResult, ShareMode,
 };
 use openproof_store::AppStore;
 use std::path::PathBuf;

@@ -87,10 +87,7 @@ pub(crate) fn extract_library_seed_items(source: &str) -> Vec<LibrarySeedItem> {
                 && index + 1 < lines.len()
             {
                 let next = lines[index + 1].trim();
-                if next.is_empty()
-                    || parse_decl_header(next).is_some()
-                    || next.starts_with("/--")
-                {
+                if next.is_empty() || parse_decl_header(next).is_some() || next.starts_with("/--") {
                     break;
                 }
                 header.push(' ');
@@ -203,8 +200,8 @@ impl AppStore {
                 )
             })?;
             let module_name = lean_module_name(relative);
-            let contents = fs::read_to_string(&file)
-                .with_context(|| format!("reading {}", file.display()))?;
+            let contents =
+                fs::read_to_string(&file).with_context(|| format!("reading {}", file.display()))?;
             for item in extract_library_seed_items(&contents) {
                 let artifact_hash = stable_hash(&item.statement);
                 let artifact_id = format!("seed_artifact_{artifact_hash}");
@@ -353,7 +350,14 @@ impl AppStore {
             SET status = ?, stats_json = ?, error = ?, updated_at = ?, completed_at = ?
             WHERE id = ?
             "#,
-            rusqlite::params![status, serde_json::to_string(stats)?, error, &now, &now, run_id],
+            rusqlite::params![
+                status,
+                serde_json::to_string(stats)?,
+                error,
+                &now,
+                &now,
+                run_id
+            ],
         )?;
         Ok(())
     }

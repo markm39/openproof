@@ -37,12 +37,10 @@ pub fn is_setup_complete() -> bool {
         return false;
     }
     match std::fs::read_to_string(&path) {
-        Ok(content) => {
-            serde_json::from_str::<serde_json::Value>(&content)
-                .ok()
-                .and_then(|v| v.get("setup_complete")?.as_bool())
-                .unwrap_or(false)
-        }
+        Ok(content) => serde_json::from_str::<serde_json::Value>(&content)
+            .ok()
+            .and_then(|v| v.get("setup_complete")?.as_bool())
+            .unwrap_or(false),
         Err(_) => false,
     }
 }

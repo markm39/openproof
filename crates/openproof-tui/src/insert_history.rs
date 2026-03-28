@@ -25,10 +25,7 @@ use crate::custom_terminal::CustomTerminal;
 /// terminal scrollback), then write the new content in the space created
 /// above the viewport. The viewport position doesn't change relative to the
 /// bottom of the screen.
-pub fn insert_history_lines<B>(
-    terminal: &mut CustomTerminal<B>,
-    lines: Vec<Line>,
-) -> io::Result<()>
+pub fn insert_history_lines<B>(terminal: &mut CustomTerminal<B>, lines: Vec<Line>) -> io::Result<()>
 where
     B: Backend + Write,
 {
@@ -121,13 +118,25 @@ fn write_line_spans(writer: &mut impl Write, line: &Line) -> io::Result<()> {
         let bg = span.style.bg.map(Into::into).unwrap_or(CColor::Reset);
         queue!(writer, SetColors(Colors::new(fg, bg)))?;
 
-        if span.style.add_modifier.contains(ratatui::style::Modifier::BOLD) {
+        if span
+            .style
+            .add_modifier
+            .contains(ratatui::style::Modifier::BOLD)
+        {
             queue!(writer, SetAttribute(crossterm::style::Attribute::Bold))?;
         }
-        if span.style.add_modifier.contains(ratatui::style::Modifier::DIM) {
+        if span
+            .style
+            .add_modifier
+            .contains(ratatui::style::Modifier::DIM)
+        {
             queue!(writer, SetAttribute(crossterm::style::Attribute::Dim))?;
         }
-        if span.style.add_modifier.contains(ratatui::style::Modifier::ITALIC) {
+        if span
+            .style
+            .add_modifier
+            .contains(ratatui::style::Modifier::ITALIC)
+        {
             queue!(writer, SetAttribute(crossterm::style::Attribute::Italic))?;
         }
 

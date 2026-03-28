@@ -86,14 +86,23 @@ impl AppState {
                 promote,
                 result,
             } => {
-                return self.apply_branch_verify_finished(branch_id, focus_node_id, promote, result);
+                return self.apply_branch_verify_finished(
+                    branch_id,
+                    focus_node_id,
+                    promote,
+                    result,
+                );
             }
 
             // --- Content appending ---
             AppEvent::AppendAssistant(content) => {
                 return self.apply_append_assistant(content);
             }
-            AppEvent::AppendBranchAssistant { branch_id, content, used_tools } => {
+            AppEvent::AppendBranchAssistant {
+                branch_id,
+                content,
+                used_tools,
+            } => {
                 return self.apply_append_branch_assistant(branch_id, content, used_tools);
             }
             AppEvent::FinishBranch {
@@ -228,7 +237,12 @@ impl AppState {
             AppEvent::ProofGoalUpdated(goal) => {
                 if let Some(session) = self.current_session_mut() {
                     // Update existing goal or insert new one
-                    if let Some(existing) = session.proof.proof_goals.iter_mut().find(|g| g.id == goal.id) {
+                    if let Some(existing) = session
+                        .proof
+                        .proof_goals
+                        .iter_mut()
+                        .find(|g| g.id == goal.id)
+                    {
                         *existing = goal;
                     } else {
                         session.proof.proof_goals.push(goal);
@@ -260,28 +274,29 @@ impl AppState {
                 };
 
                 if let Some(session) = self.current_session_mut() {
-                    session.transcript.push(openproof_protocol::TranscriptEntry {
-                        id: format!("tactic_{sorry_line}_{}", chrono::Utc::now().timestamp_millis()),
-                        role: openproof_protocol::MessageRole::Notice,
-                        title: Some("Tactic Search".to_string()),
-                        content: notice.clone(),
-                        created_at: chrono::Utc::now().to_rfc3339(),
-                    });
+                    session
+                        .transcript
+                        .push(openproof_protocol::TranscriptEntry {
+                            id: format!(
+                                "tactic_{sorry_line}_{}",
+                                chrono::Utc::now().timestamp_millis()
+                            ),
+                            role: openproof_protocol::MessageRole::Notice,
+                            title: Some("Tactic Search".to_string()),
+                            content: notice.clone(),
+                            created_at: chrono::Utc::now().to_rfc3339(),
+                        });
                 }
 
                 if solved && !tactics.is_empty() {
                     let tactic_text = tactics.join("\n  ");
-                    self.status = format!(
-                        "Tactic search solved line {sorry_line}: {tactic_text}"
-                    );
+                    self.status = format!("Tactic search solved line {sorry_line}: {tactic_text}");
 
                     if let Some(session) = self.current_session_mut() {
-                        if let Some(node) = session.proof.nodes.iter_mut().find(|n| n.id == node_id) {
-                            let patched = replace_sorry_at_line(
-                                &node.content,
-                                sorry_line,
-                                &tactic_text,
-                            );
+                        if let Some(node) = session.proof.nodes.iter_mut().find(|n| n.id == node_id)
+                        {
+                            let patched =
+                                replace_sorry_at_line(&node.content, sorry_line, &tactic_text);
                             if patched != node.content {
                                 node.content = patched;
                                 node.updated_at = chrono::Utc::now().to_rfc3339();

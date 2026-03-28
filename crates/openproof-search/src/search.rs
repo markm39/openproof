@@ -36,10 +36,21 @@ struct SearchNode {
 }
 
 impl SearchNode {
-    fn new(goals: Vec<String>, tactics: Vec<String>, sorry_line: usize, length_penalty: f64) -> Self {
+    fn new(
+        goals: Vec<String>,
+        tactics: Vec<String>,
+        sorry_line: usize,
+        length_penalty: f64,
+    ) -> Self {
         let score = goals.len();
         let priority = ((score as f64 + length_penalty * tactics.len() as f64) * 1000.0) as u64;
-        Self { priority, score, tactics, goals, sorry_line }
+        Self {
+            priority,
+            score,
+            tactics,
+            goals,
+            sorry_line,
+        }
     }
 }
 
@@ -275,20 +286,31 @@ impl PantographNode {
     ) -> Self {
         let score = goal_descriptions.len();
         let priority = ((score as f64 + length_penalty * tactics.len() as f64) * 1000.0) as u64;
-        Self { priority, score, state_id, tactics, goal_descriptions }
+        Self {
+            priority,
+            score,
+            state_id,
+            tactics,
+            goal_descriptions,
+        }
     }
 }
 
 impl PartialEq for PantographNode {
-    fn eq(&self, other: &Self) -> bool { self.priority == other.priority }
+    fn eq(&self, other: &Self) -> bool {
+        self.priority == other.priority
+    }
 }
 impl Eq for PantographNode {}
 impl PartialOrd for PantographNode {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 impl Ord for PantographNode {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        Reverse(self.priority).cmp(&Reverse(other.priority))
+        Reverse(self.priority)
+            .cmp(&Reverse(other.priority))
             .then_with(|| self.tactics.len().cmp(&other.tactics.len()))
     }
 }
@@ -313,12 +335,18 @@ pub fn pantograph_best_first_search(
 
     // Start the proof goal
     let initial_state_id = {
-        let mut pg = pantograph.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+        let mut pg = pantograph
+            .lock()
+            .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
         if !pg.is_alive() {
             bail!("Pantograph process is not running");
         }
-        pg.start_goal(type_expr)?
-            .ok_or_else(|| anyhow::anyhow!("goal.start failed for: {}", &type_expr[..type_expr.len().min(100)]))?
+        pg.start_goal(type_expr)?.ok_or_else(|| {
+            anyhow::anyhow!(
+                "goal.start failed for: {}",
+                &type_expr[..type_expr.len().min(100)]
+            )
+        })?
     };
     allocated_states.push(initial_state_id);
 
@@ -364,7 +392,11 @@ pub fn pantograph_best_first_search(
         }
 
         // Focus on the first goal description for tactic proposal
-        let goal_text = node.goal_descriptions.first().map(|s| s.as_str()).unwrap_or("");
+        let goal_text = node
+            .goal_descriptions
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or("");
         if goal_text.is_empty() {
             continue;
         }
@@ -378,7 +410,9 @@ pub fn pantograph_best_first_search(
         // Test each candidate tactic via Pantograph (3ms each)
         for tactic in &candidates {
             let result = {
-                let mut pg = pantograph.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
+                let mut pg = pantograph
+                    .lock()
+                    .map_err(|e| anyhow::anyhow!("lock: {e}"))?;
                 if !pg.is_alive() {
                     cleanup_states(pantograph, &allocated_states);
                     bail!("Pantograph died during search");
@@ -387,7 +421,7 @@ pub fn pantograph_best_first_search(
             };
             expansions += 1;
 
-            if !result.error.is_none() || result.new_state_id.is_none() {
+            if result.error.is_some() || result.new_state_id.is_none() {
                 continue; // tactic failed
             }
 

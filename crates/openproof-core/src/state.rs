@@ -1,6 +1,5 @@
 use openproof_protocol::{
-    AuthSummary, LeanHealth, LeanVerificationSummary, AgentStatus, SessionSnapshot,
-    TranscriptEntry,
+    AgentStatus, AuthSummary, LeanHealth, LeanVerificationSummary, SessionSnapshot, TranscriptEntry,
 };
 
 use crate::helpers::default_session_with_workspace;
@@ -71,7 +70,11 @@ pub enum AppEvent {
     StreamFinished,
     ReasoningStarted,
     AppendAssistant(String),
-    AppendBranchAssistant { branch_id: String, content: String, used_tools: bool },
+    AppendBranchAssistant {
+        branch_id: String,
+        content: String,
+        used_tools: bool,
+    },
     FinishBranch {
         branch_id: String,
         status: AgentStatus,
@@ -79,7 +82,10 @@ pub enum AppEvent {
         output: String,
     },
     AutonomousTick,
-    AppendNotice { title: String, content: String },
+    AppendNotice {
+        title: String,
+        content: String,
+    },
     ToolCallReceived {
         call_id: String,
         tool_name: String,
@@ -94,7 +100,10 @@ pub enum AppEvent {
     ToolLoopIteration(usize),
     /// Sync workspace file content into the active proof node.
     /// Emitted after a tool-using turn so node.content reflects what tools wrote.
-    WorkspaceContentSync { content: String, verified: bool },
+    WorkspaceContentSync {
+        content: String,
+        verified: bool,
+    },
     FocusNext,
     ToggleProofPane,
     SelectPrevQuestionOption,

@@ -88,6 +88,7 @@ impl EmbeddingStore {
     }
 
     /// Upsert a verified corpus item into the vector store.
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_item(
         &self,
         identity_key: &str,
@@ -243,10 +244,7 @@ pub fn build_embedding_text(
     module_name: &str,
     artifact_content: &str,
 ) -> String {
-    let mut parts = vec![
-        format!("{decl_kind}: {label}"),
-        statement.to_string(),
-    ];
+    let mut parts = vec![format!("{decl_kind}: {label}"), statement.to_string()];
     if !module_name.is_empty() {
         parts.push(format!("module: {module_name}"));
     }

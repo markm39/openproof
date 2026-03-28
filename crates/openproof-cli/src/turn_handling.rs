@@ -13,12 +13,10 @@ use crate::system_prompt::{build_branch_turn_messages, build_turn_messages_with_
 use openproof_core::{AppEvent, AppState, PendingWrite, SubmittedInput};
 use openproof_lean::lsp_mcp::LeanLspMcp;
 use openproof_lean::tools::{execute_tool, ToolContext, ToolOutput};
-use std::sync::{Arc, Mutex};
-use openproof_model::{
-    run_codex_turn_with_events, CodexTurnRequest, StreamEvent, TurnMessage,
-};
+use openproof_model::{run_codex_turn_with_events, CodexTurnRequest, StreamEvent, TurnMessage};
 use openproof_protocol::{AgentRole, AgentStatus, BranchQueueState, SessionSnapshot};
 use openproof_store::AppStore;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 /// Maximum number of tool-loop iterations per turn.
@@ -116,7 +114,7 @@ pub async fn run_agentic_loop(
                 messages: &messages,
                 model: "gpt-5.4",
                 reasoning_effort: "high",
-            include_tools: true,
+                include_tools: true,
             },
             move |event| match event {
                 StreamEvent::TextDelta(delta) => {
@@ -176,7 +174,9 @@ pub async fn run_agentic_loop(
                     let output = if call.name == "corpus_get" {
                         let label = serde_json::from_str::<serde_json::Value>(&call.arguments)
                             .ok()
-                            .and_then(|v| v.get("label").and_then(|q| q.as_str()).map(str::to_string))
+                            .and_then(|v| {
+                                v.get("label").and_then(|q| q.as_str()).map(str::to_string)
+                            })
                             .unwrap_or_default();
                         match store.get_artifact_content(&label) {
                             Ok(Some(code)) => ToolOutput {
@@ -191,7 +191,9 @@ pub async fn run_agentic_loop(
                     } else if call.name == "corpus_search" {
                         let query = serde_json::from_str::<serde_json::Value>(&call.arguments)
                             .ok()
-                            .and_then(|v| v.get("query").and_then(|q| q.as_str()).map(str::to_string))
+                            .and_then(|v| {
+                                v.get("query").and_then(|q| q.as_str()).map(str::to_string)
+                            })
                             .unwrap_or_default();
                         let mut results = Vec::new();
 
@@ -217,14 +219,18 @@ pub async fn run_agentic_loop(
                         // Cloud expansion is only useful when the local corpus doesn't have the answer.
                         if !has_verified_proof {
                             // Cloud semantic search + edge expansion
-                            let cloud_client = openproof_cloud::CloudCorpusClient::new(Default::default());
+                            let cloud_client =
+                                openproof_cloud::CloudCorpusClient::new(Default::default());
                             let _ = cloud_client.availability();
                             let mut cloud_identity_keys: Vec<String> = Vec::new();
                             match cloud_client.search_semantic(&query, 10).await {
                                 Ok(semantic_hits) => {
                                     for hit in &semantic_hits {
                                         cloud_identity_keys.push(hit.identity_key.clone());
-                                        let line = format!("- {} (sim:{:.2}) :: {}", hit.label, hit.score, hit.statement);
+                                        let line = format!(
+                                            "- {} (sim:{:.2}) :: {}",
+                                            hit.label, hit.score, hit.statement
+                                        );
                                         if !results.iter().any(|r| r.contains(&hit.label)) {
                                             results.push(line);
                                         }
@@ -253,13 +259,27 @@ pub async fn run_agentic_loop(
                             if let Ok(failures) = cloud_client.search_failures(&query, 5).await {
                                 if !failures.is_empty() {
                                     results.push(String::new());
-                                    results.push("KNOWN FAILURES (do NOT repeat these approaches):".to_string());
+                                    results.push(
+                                        "KNOWN FAILURES (do NOT repeat these approaches):"
+                                            .to_string(),
+                                    );
                                     for f in &failures {
-                                        let class = f.get("failureClass").and_then(|v| v.as_str()).unwrap_or("");
-                                        let snippet = f.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
-                                        let diag = f.get("diagnostic").and_then(|v| v.as_str()).unwrap_or("");
+                                        let class = f
+                                            .get("failureClass")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let snippet =
+                                            f.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+                                        let diag = f
+                                            .get("diagnostic")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
                                         if !snippet.is_empty() || !diag.is_empty() {
-                                            results.push(format!("  [{class}] {} -> {}", &snippet[..snippet.len().min(120)], &diag[..diag.len().min(120)]));
+                                            results.push(format!(
+                                                "  [{class}] {} -> {}",
+                                                &snippet[..snippet.len().min(120)],
+                                                &diag[..diag.len().min(120)]
+                                            ));
                                         }
                                     }
                                 }
@@ -267,9 +287,15 @@ pub async fn run_agentic_loop(
                         }
 
                         if results.is_empty() {
-                            ToolOutput { success: true, content: "No results found.".to_string() }
+                            ToolOutput {
+                                success: true,
+                                content: "No results found.".to_string(),
+                            }
                         } else {
-                            ToolOutput { success: true, content: results.join("\n") }
+                            ToolOutput {
+                                success: true,
+                                content: results.join("\n"),
+                            }
                         }
                     } else {
                         // All other tools: execute on a blocking thread
@@ -318,10 +344,7 @@ pub async fn run_agentic_loop(
                     });
 
                     // Append the tool result to messages for the next API call.
-                    messages.push(TurnMessage::tool_result(
-                        &call.call_id,
-                        &output.content,
-                    ));
+                    messages.push(TurnMessage::tool_result(&call.call_id, &output.content));
                 }
                 // Continue the loop: call the API again with tool results.
             }
@@ -444,12 +467,16 @@ pub fn start_agent_branch_turn(
                         let output = if call.name == "corpus_get" {
                             let label = serde_json::from_str::<serde_json::Value>(&call.arguments)
                                 .ok()
-                                .and_then(|v| v.get("label").and_then(|q| q.as_str()).map(str::to_string))
+                                .and_then(|v| {
+                                    v.get("label").and_then(|q| q.as_str()).map(str::to_string)
+                                })
                                 .unwrap_or_default();
                             match store.get_artifact_content(&label) {
                                 Ok(Some(code)) => ToolOutput {
                                     success: true,
-                                    content: format!("Full proof code for `{label}`:\n```lean\n{code}\n```"),
+                                    content: format!(
+                                        "Full proof code for `{label}`:\n```lean\n{code}\n```"
+                                    ),
                                 },
                                 _ => ToolOutput {
                                     success: false,
@@ -459,7 +486,9 @@ pub fn start_agent_branch_turn(
                         } else if call.name == "corpus_search" {
                             let query = serde_json::from_str::<serde_json::Value>(&call.arguments)
                                 .ok()
-                                .and_then(|v| v.get("query").and_then(|q| q.as_str()).map(str::to_string))
+                                .and_then(|v| {
+                                    v.get("query").and_then(|q| q.as_str()).map(str::to_string)
+                                })
                                 .unwrap_or_default();
                             let mut results = Vec::new();
                             if let Ok(hits) = store.search_verified_corpus(&query, 10) {
@@ -473,7 +502,10 @@ pub fn start_agent_branch_turn(
                                 for h in &hits {
                                     cloud_keys.push(h.identity_key.clone());
                                     if !results.iter().any(|r| r.contains(&h.label)) {
-                                        results.push(format!("- {} (sim:{:.2}) :: {}", h.label, h.score, h.statement));
+                                        results.push(format!(
+                                            "- {} (sim:{:.2}) :: {}",
+                                            h.label, h.score, h.statement
+                                        ));
                                     }
                                 }
                             }
@@ -482,7 +514,10 @@ pub fn start_agent_branch_turn(
                                 if let Ok(related) = cloud.get_related_items(key, 5).await {
                                     for item in &related {
                                         if !results.iter().any(|r| r.contains(&item.label)) {
-                                            results.push(format!("- {} ({}) :: {}", item.label, item.edge_type, item.statement));
+                                            results.push(format!(
+                                                "- {} ({}) :: {}",
+                                                item.label, item.edge_type, item.statement
+                                            ));
                                         }
                                     }
                                 }
@@ -493,18 +528,33 @@ pub fn start_agent_branch_turn(
                                     results.push(String::new());
                                     results.push("KNOWN FAILURES (do NOT repeat):".to_string());
                                     for f in &failures {
-                                        let class = f.get("failureClass").and_then(|v| v.as_str()).unwrap_or("");
-                                        let snippet = f.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
-                                        let diag = f.get("diagnostic").and_then(|v| v.as_str()).unwrap_or("");
+                                        let class = f
+                                            .get("failureClass")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+                                        let snippet =
+                                            f.get("snippet").and_then(|v| v.as_str()).unwrap_or("");
+                                        let diag = f
+                                            .get("diagnostic")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
                                         if !snippet.is_empty() || !diag.is_empty() {
-                                            results.push(format!("  [{class}] {} -> {}", &snippet[..snippet.len().min(120)], &diag[..diag.len().min(120)]));
+                                            results.push(format!(
+                                                "  [{class}] {} -> {}",
+                                                &snippet[..snippet.len().min(120)],
+                                                &diag[..diag.len().min(120)]
+                                            ));
                                         }
                                     }
                                 }
                             }
                             ToolOutput {
                                 success: true,
-                                content: if results.is_empty() { "No results.".to_string() } else { results.join("\n") },
+                                content: if results.is_empty() {
+                                    "No results.".to_string()
+                                } else {
+                                    results.join("\n")
+                                },
                             }
                         } else {
                             tokio::task::spawn_blocking({
@@ -540,10 +590,7 @@ pub fn start_agent_branch_turn(
                                 last_verify_ok = true;
                             }
                         }
-                        all_messages.push(TurnMessage::tool_result(
-                            &call.call_id,
-                            &output.content,
-                        ));
+                        all_messages.push(TurnMessage::tool_result(&call.call_id, &output.content));
                     }
                 }
                 Err(error) => {
@@ -639,8 +686,7 @@ pub fn start_branch_verification(
                     .nodes
                     .iter()
                     .find(|n| {
-                        Some(n.id.as_str())
-                            == verification_session.proof.active_node_id.as_deref()
+                        Some(n.id.as_str()) == verification_session.proof.active_node_id.as_deref()
                     })
                     .unwrap_or(&verification_session.proof.nodes[0]),
             ),
@@ -660,8 +706,7 @@ pub fn start_branch_verification(
                     .nodes
                     .iter()
                     .find(|n| {
-                        Some(n.id.as_str())
-                            == verification_clone.proof.active_node_id.as_deref()
+                        Some(n.id.as_str()) == verification_clone.proof.active_node_id.as_deref()
                     })
                     .unwrap_or(&verification_clone.proof.nodes[0]),
                 scratch.as_deref(),
@@ -681,8 +726,7 @@ pub fn start_branch_verification(
                 let embed_ok = result.ok;
                 tokio::spawn(async move {
                     let persisted = tokio::task::spawn_blocking(move || {
-                        persist_store
-                            .record_verification_result(&persist_session, &persist_result)
+                        persist_store.record_verification_result(&persist_session, &persist_result)
                     })
                     .await
                     .ok()
@@ -695,7 +739,10 @@ pub fn start_branch_verification(
                     }
                     // Embed + index verified items (fire-and-forget)
                     if embed_ok {
-                        if let Some(node) = embed_session.proof.active_node_id.as_deref()
+                        if let Some(node) = embed_session
+                            .proof
+                            .active_node_id
+                            .as_deref()
                             .and_then(|id| embed_session.proof.nodes.iter().find(|n| n.id == id))
                         {
                             let ik = format!("session/{}/{}", embed_session.id, node.id);
@@ -826,8 +873,7 @@ pub fn ensure_hidden_agent_branch(
         return Ok((branch_id, snapshot));
     }
 
-    let (write, branch_id, _task_id) =
-        state.spawn_agent_branch(role, title, description, true)?;
+    let (write, branch_id, _task_id) = state.spawn_agent_branch(role, title, description, true)?;
     let snapshot = write.session.clone();
     persist_write(tx, store, write);
     Ok((branch_id, snapshot))
@@ -861,7 +907,13 @@ pub fn submit_selected_question_option(
                 session: submitted.session_snapshot.clone(),
             },
         );
-        handle_submission(tx, store, state, submitted, std::sync::Arc::new(std::sync::OnceLock::new()));
+        handle_submission(
+            tx,
+            store,
+            state,
+            submitted,
+            std::sync::Arc::new(std::sync::OnceLock::new()),
+        );
     }
 }
 
@@ -873,15 +925,14 @@ pub fn persist_verification_result(
 ) {
     tokio::spawn(async move {
         let store2 = store.clone();
-        let outcome =
-            tokio::task::spawn_blocking(move || {
-                let res = store.record_verification_result(&session, &result);
-                if result.ok {
-                    crate::helpers::populate_knowledge_graph(&store2, &session.id);
-                }
-                res
-            })
-                .await;
+        let outcome = tokio::task::spawn_blocking(move || {
+            let res = store.record_verification_result(&session, &result);
+            if result.ok {
+                crate::helpers::populate_knowledge_graph(&store2, &session.id);
+            }
+            res
+        })
+        .await;
         match outcome {
             Ok(Ok(())) => {}
             Ok(Err(e)) => {

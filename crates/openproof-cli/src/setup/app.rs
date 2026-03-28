@@ -36,13 +36,20 @@ pub struct SetupApp {
 }
 
 pub const PROVIDERS: &[(&str, &str, bool)] = &[
-    ("codex", "Codex (ChatGPT) -- uses existing openproof login", false),
+    (
+        "codex",
+        "Codex (ChatGPT) -- uses existing openproof login",
+        false,
+    ),
     ("openai", "OpenAI API -- requires OPENAI_API_KEY", true),
     ("anthropic", "Anthropic -- requires ANTHROPIC_API_KEY", true),
 ];
 
 pub const CORPUS_MODES: &[(&str, &str)] = &[
-    ("cloud", "Cloud (recommended) -- faster proofs, larger search corpus"),
+    (
+        "cloud",
+        "Cloud (recommended) -- faster proofs, larger search corpus",
+    ),
     ("local", "Local only -- auto-imports Mathlib, no network"),
 ];
 
