@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="markm39/openproof"
+REPO="mxthematic/openproof"
 BINARY_NAME="openproof"
 INSTALL_DIR="${OPENPROOF_INSTALL_DIR:-/usr/local/bin}"
 
