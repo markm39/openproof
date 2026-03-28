@@ -265,7 +265,7 @@ fn minif2f_tactic_search_benchmark() {
         };
         let start = Instant::now();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            pantograph_best_first_search(&pg, &propose_fn, type_expr, "", &config)
+            pantograph_best_first_search(&pg, &propose_fn, type_expr, "", &config, None)
         }));
         let elapsed = start.elapsed();
         total_time += elapsed;

@@ -118,6 +118,8 @@ pub struct ProofGoal {
     pub sorry_line: Option<usize>,
     /// Pantograph state ID (for chaining further tactics).
     pub state_id: Option<u64>,
+    /// Who closed this goal: "agent:prover", "agent:repairer", etc. None = BFS.
+    pub solved_by: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

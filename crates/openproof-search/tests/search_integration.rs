@@ -13,7 +13,8 @@ use openproof_lean::lsp_mcp::LeanLspMcp;
 use openproof_lean::pantograph::Pantograph;
 use openproof_lean::tools::{find_sorry_positions, run_lean_verify_raw};
 use openproof_search::config::{SearchResult, TacticSearchConfig};
-use openproof_search::search::{best_first_search, pantograph_best_first_search, ProposeFn};
+use openproof_search::lsp_search::best_first_search;
+use openproof_search::search::{pantograph_best_first_search, ProposeFn};
 
 fn lean_project_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -175,7 +176,7 @@ theorem test_add_comm (a b : Nat) : a + b = b + a := by
     let (line, _) = sorrys[0];
     println!("Searching sorry at line {} ...", line);
     let start = Instant::now();
-    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
+    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config, None)
         .expect("search failed");
     println!("Completed in {:.2}s", start.elapsed().as_secs_f64());
     print_result(&result);
@@ -199,7 +200,7 @@ theorem test_ring (x : Int) : (x + 1) * (x + 1) = x * x + 2 * x + 1 := by
     let (line, _) = sorrys[0];
     println!("Searching sorry at line {} ...", line);
     let start = Instant::now();
-    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
+    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config, None)
         .expect("search failed");
     println!("Completed in {:.2}s", start.elapsed().as_secs_f64());
     print_result(&result);
@@ -223,7 +224,7 @@ theorem test_omega (n : Nat) : n < n + 1 := by
     let (line, _) = sorrys[0];
     println!("Searching sorry at line {} ...", line);
     let start = Instant::now();
-    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
+    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config, None)
         .expect("search failed");
     println!("Completed in {:.2}s", start.elapsed().as_secs_f64());
     print_result(&result);
@@ -255,7 +256,7 @@ theorem test_grind (a b c : Nat) (h1 : a = b) (h2 : b = c) : a = c := by
     let (line, _) = sorrys[0];
     println!("Searching sorry at line {} with grind only ...", line);
     let start = Instant::now();
-    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
+    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config, None)
         .expect("search failed");
     println!("Completed in {:.2}s", start.elapsed().as_secs_f64());
     print_result(&result);
@@ -285,7 +286,7 @@ theorem e2e_test (n : Nat) : n + 0 = n := by
     let (line, _) = sorrys[0];
     println!("[e2e] Searching sorry at line {}...", line);
     let start = Instant::now();
-    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
+    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config, None)
         .expect("search failed");
     println!(
         "[e2e] Search completed in {:.2}s",
@@ -343,7 +344,7 @@ theorem sorry3 (n : Nat) : n * 1 = n := by
     for (i, &(line, _)) in sorrys.iter().enumerate() {
         println!("\n[multi] Sorry #{} at line {}...", i + 1, line);
         let start = Instant::now();
-        let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
+        let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config, None)
             .expect("search failed");
         println!("[multi] Completed in {:.2}s", start.elapsed().as_secs_f64());
         print_result(&result);
@@ -382,7 +383,7 @@ theorem test_penalty (n : Nat) : 0 + n = n := by
     let (line, _) = sorrys[0];
     println!("Searching with length_penalty=1.0 ...");
     let start = Instant::now();
-    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config)
+    let result = best_first_search(&lsp, &propose_fn, &scratch_path, line, "", &config, None)
         .expect("search failed");
     println!("Completed in {:.2}s", start.elapsed().as_secs_f64());
     print_result(&result);
@@ -423,8 +424,8 @@ fn pantograph_solves_simp_goal() {
     let goal = "forall (n : Nat), n + 0 = n";
     println!("Goal: {goal}");
     let start = Instant::now();
-    let result =
-        pantograph_best_first_search(&pg, &propose_fn, goal, "", &config).expect("search failed");
+    let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config, None)
+        .expect("search failed");
     println!("Completed in {:.3}s", start.elapsed().as_secs_f64());
     print_result(&result);
     assert!(result.is_solved());
@@ -442,8 +443,8 @@ fn pantograph_solves_with_grind() {
     let goal = "forall (a b c : Nat), a = b -> b = c -> a = c";
     println!("Goal (grind-only): {goal}");
     let start = Instant::now();
-    let result =
-        pantograph_best_first_search(&pg, &propose_fn, goal, "", &config).expect("search failed");
+    let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config, None)
+        .expect("search failed");
     println!("Completed in {:.3}s", start.elapsed().as_secs_f64());
     print_result(&result);
     assert!(result.is_solved(), "grind should solve transitivity");
@@ -471,7 +472,7 @@ fn pantograph_solves_multi_goals() {
     for (goal, label) in &goals {
         print!("  {label}: ");
         let start = Instant::now();
-        let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config)
+        let result = pantograph_best_first_search(&pg, &propose_fn, goal, "", &config, None)
             .expect("search failed");
         let elapsed = start.elapsed();
         match &result {

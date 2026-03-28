@@ -378,3 +378,13 @@ body {
 
 /* Empty state */
 .empty { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--muted); }
+
+/* Proof tree graph animations */
+@keyframes frontier-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(251, 191, 36, 0); }
+}
+@keyframes active-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+}

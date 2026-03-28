@@ -18,7 +18,7 @@ use openproof_core::{AppEvent, AppState, AutonomousRunPatch};
 use openproof_lean::lsp_mcp::LeanLspMcp;
 use openproof_protocol::{AgentRole, AgentStatus, BranchQueueState, SearchStrategy};
 use openproof_search::config::TacticSearchConfig;
-use openproof_search::search::best_first_search;
+use openproof_search::lsp_search::best_first_search;
 use openproof_store::AppStore;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -1233,12 +1233,19 @@ fn spawn_tactic_search_for_sorrys(
                         "[tactic-search] Pantograph search at line {line}: {}",
                         &goal_type[..goal_type.len().min(60)]
                     );
+                    let on_goal = {
+                        let tx = tx.clone();
+                        move |goal: openproof_protocol::ProofGoal| {
+                            let _ = tx.send(AppEvent::ProofGoalUpdated(goal));
+                        }
+                    };
                     match openproof_search::search::pantograph_best_first_search(
                         &pg,
                         &propose_fn,
                         &goal_type,
                         "",
                         &config,
+                        Some(&on_goal),
                     ) {
                         Ok(result) => emit_search_result(&tx, &node_id, line, result),
                         Err(e) => eprintln!("[tactic-search] Pantograph error at line {line}: {e}"),
@@ -1254,7 +1261,21 @@ fn spawn_tactic_search_for_sorrys(
             let scratch = scratch_path.clone();
             tokio::task::spawn_blocking(move || {
                 eprintln!("[tactic-search] LSP search at line {line}");
-                match best_first_search(&lsp, &propose_fn, &scratch, line, "", &config) {
+                let on_goal = {
+                    let tx = tx.clone();
+                    move |goal: openproof_protocol::ProofGoal| {
+                        let _ = tx.send(AppEvent::ProofGoalUpdated(goal));
+                    }
+                };
+                match best_first_search(
+                    &lsp,
+                    &propose_fn,
+                    &scratch,
+                    line,
+                    "",
+                    &config,
+                    Some(&on_goal),
+                ) {
                     Ok(result) => emit_search_result(&tx, &node_id, line, result),
                     Err(e) => eprintln!("[tactic-search] LSP error at line {line}: {e}"),
                 }

@@ -6,5 +6,6 @@
 
 pub mod cache;
 pub mod config;
+pub mod lsp_search;
 pub mod ollama;
 pub mod search;
