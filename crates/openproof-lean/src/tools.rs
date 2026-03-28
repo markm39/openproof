@@ -137,17 +137,33 @@ fn build_compilation_unit(content: &str, ctx: &ToolContext) -> String {
         (imports, content.to_string())
     };
 
+    // Separate imports from open statements so we can insert corpus import
+    // between them. Lean requires all imports before any open statements.
+    let mut imports: Vec<String> = Vec::new();
+    let mut opens: Vec<String> = Vec::new();
+    for line in &user_imports {
+        let trimmed = line.trim();
+        if trimmed.starts_with("import ") {
+            imports.push(line.clone());
+        } else if trimmed.starts_with("open ") {
+            opens.push(line.clone());
+        }
+    }
+
     // Strip any user-written `import OpenProof.Corpus` -- we manage this automatically.
-    let mut lines: Vec<String> = user_imports
-        .into_iter()
-        .filter(|l| !l.contains("OpenProof.Corpus"))
-        .collect();
+    imports.retain(|l| !l.contains("OpenProof.Corpus"));
 
     // Only add the corpus import if the compiled olean actually exists.
     if crate::corpus_module::corpus_olean_exists(ctx.project_dir) {
-        lines.push("import OpenProof.Corpus".to_string());
+        imports.push("import OpenProof.Corpus".to_string());
     }
 
+    // Assemble: imports first, then opens, then body.
+    let mut lines: Vec<String> = imports;
+    if !opens.is_empty() {
+        lines.push(String::new());
+        lines.extend(opens);
+    }
     lines.push(String::new());
 
     // Also strip corpus import from the body (model may have written it inline)
