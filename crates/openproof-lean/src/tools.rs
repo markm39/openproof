@@ -418,12 +418,55 @@ pub fn find_sorry_positions(content: &str) -> Vec<(usize, usize)> {
 }
 
 fn tool_lean_check(args: &Value, ctx: &ToolContext) -> Result<ToolOutput> {
-    let expr = args
-        .get("expr")
-        .and_then(Value::as_str)
-        .context("missing 'expr' argument")?;
+    // Collect expressions from either `expr` (single) or `exprs` (batch).
+    let mut exprs: Vec<String> = Vec::new();
+    if let Some(arr) = args.get("exprs").and_then(Value::as_array) {
+        for v in arr {
+            if let Some(s) = v.as_str() {
+                exprs.push(s.to_string());
+            }
+        }
+    }
+    if let Some(s) = args.get("expr").and_then(Value::as_str) {
+        if !exprs.iter().any(|e| e == s) {
+            exprs.push(s.to_string());
+        }
+    }
+    if exprs.is_empty() {
+        anyhow::bail!("missing 'expr' or 'exprs' argument");
+    }
+
+    // Fast path: Pantograph env.inspect (milliseconds per expression).
+    if let Some(ref prover) = ctx.prover {
+        if let Ok(mut sp) = prover.lock() {
+            if sp.is_alive() {
+                let mut parts = Vec::new();
+                let mut all_ok = true;
+                for expr in &exprs {
+                    match sp.pantograph.inspect(expr) {
+                        Ok(Some(ty)) => parts.push(format!("{expr} : {ty}")),
+                        Ok(None) => {
+                            all_ok = false;
+                            parts.push(format!("{expr} : unknown (not found in environment)"));
+                        }
+                        Err(_) => {
+                            all_ok = false;
+                            parts.push(format!("{expr} : error (Pantograph inspect failed)"));
+                        }
+                    }
+                }
+                return Ok(ToolOutput {
+                    success: all_ok,
+                    content: truncate_output(&parts.join("\n")),
+                });
+            }
+        }
+    }
+
+    // Fallback: batch all expressions into a single Lean invocation.
     let imports = build_import_block(ctx.imports);
-    let content = format!("{imports}\n#check {expr}\n");
+    let checks: String = exprs.iter().map(|e| format!("#check {e}\n")).collect();
+    let content = format!("{imports}\n{checks}");
     let scratch_path = write_temp_file(&content)?;
     let (ok, output) = run_lean_command(ctx.project_dir, &scratch_path)?;
     Ok(ToolOutput {
