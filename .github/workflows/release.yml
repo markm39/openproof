@@ -152,6 +152,7 @@ jobs:
 
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/mxthematic/homebrew-tap.git" tap
           cd tap
+          mkdir -p Formula
 
           cat > Formula/openproof.rb << FORMULA
           class Openproof < Formula
