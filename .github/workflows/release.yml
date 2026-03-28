@@ -150,34 +150,34 @@ jobs:
           SHA_LINUX_X64=$(sha256sum artifacts/openproof-v*-x86_64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
           SHA_LINUX_ARM64=$(sha256sum artifacts/openproof-v*-aarch64-unknown-linux-gnu.tar.gz | cut -d' ' -f1)
 
-          git clone "https://x-access-token:${TAP_TOKEN}@github.com/markm39/homebrew-tap.git" tap
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/mxthematic/homebrew-tap.git" tap
           cd tap
 
           cat > Formula/openproof.rb << FORMULA
           class Openproof < Formula
             desc "Conversational theorem prover for Lean 4"
-            homepage "https://github.com/markm39/openproof"
+            homepage "https://github.com/mxthematic/openproof"
             version "${VERSION}"
             license "MIT"
 
             on_macos do
               on_arm do
-                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-aarch64-apple-darwin.tar.gz"
+                url "https://github.com/mxthematic/openproof/releases/download/${TAG}/openproof-v${VERSION}-aarch64-apple-darwin.tar.gz"
                 sha256 "${SHA_DARWIN_ARM64}"
               end
               on_intel do
-                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-x86_64-apple-darwin.tar.gz"
+                url "https://github.com/mxthematic/openproof/releases/download/${TAG}/openproof-v${VERSION}-x86_64-apple-darwin.tar.gz"
                 sha256 "${SHA_DARWIN_X64}"
               end
             end
 
             on_linux do
               on_arm do
-                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
+                url "https://github.com/mxthematic/openproof/releases/download/${TAG}/openproof-v${VERSION}-aarch64-unknown-linux-gnu.tar.gz"
                 sha256 "${SHA_LINUX_ARM64}"
               end
               on_intel do
-                url "https://github.com/markm39/openproof/releases/download/${TAG}/openproof-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+                url "https://github.com/mxthematic/openproof/releases/download/${TAG}/openproof-v${VERSION}-x86_64-unknown-linux-gnu.tar.gz"
                 sha256 "${SHA_LINUX_X64}"
               end
             end

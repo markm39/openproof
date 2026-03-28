@@ -59,13 +59,13 @@ npm install -g openproof
 **Homebrew** (macOS / Linux):
 
 ```bash
-brew tap markm39/tap && brew install openproof
+brew tap mxthematic/tap && brew install openproof
 ```
 
 **Shell installer**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/markm39/openproof/master/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/mxthematic/openproof/master/scripts/install.sh | sh
 ```
 
 **Cargo** (from source):
@@ -77,7 +77,7 @@ cargo install --path crates/openproof-cli
 **Build from source**:
 
 ```bash
-git clone https://github.com/markm39/openproof.git
+git clone https://github.com/mxthematic/openproof.git
 cd openproof
 cd lean && lake update && cd ..
 cargo build --release

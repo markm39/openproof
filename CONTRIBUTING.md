@@ -5,7 +5,7 @@ Thanks for your interest in contributing.
 ## Getting started
 
 ```bash
-git clone https://github.com/markm39/openproof.git
+git clone https://github.com/mxthematic/openproof.git
 cd openproof
 cd lean && lake update && cd ..
 cargo build --workspace
