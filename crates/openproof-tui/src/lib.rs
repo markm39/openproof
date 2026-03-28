@@ -1046,6 +1046,12 @@ fn build_input_lines(text: &str, cursor: usize, paste_blocks: &[String]) -> Vec<
 
 /// Compute the height needed for the input area, accounting for text wrapping,
 /// newlines, and paste block display labels.
+/// Get the display width of a character, using Unicode width tables.
+/// Returns 0 for control characters, 2 for wide CJK characters, 1 for most others.
+fn char_display_width(ch: char) -> usize {
+    unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0)
+}
+
 fn compute_input_height(
     text: &str,
     prefix_len: usize,
@@ -1073,10 +1079,11 @@ fn compute_input_height(
             }
             block_idx += 1;
         } else {
-            col += 1;
+            let w = char_display_width(ch);
+            col += w;
             if col >= usable {
                 visual_lines += 1;
-                col = 0;
+                col = if col > usable { w } else { 0 };
             }
         }
     }
@@ -1116,10 +1123,11 @@ fn cursor_visual_row(
             }
             block_idx += 1;
         } else {
-            col += 1;
+            let w = char_display_width(ch);
+            col += w;
             if col >= width {
                 row += 1;
-                col = 0;
+                col = if col > width { w } else { 0 };
             }
         }
     }
