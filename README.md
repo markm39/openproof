@@ -7,6 +7,12 @@
       |_|
 ```
 
+[![npm version](https://img.shields.io/npm/v/openproof)](https://www.npmjs.com/package/openproof)
+[![Homebrew](https://img.shields.io/badge/homebrew-mxthematic%2Ftap-orange)](https://github.com/mxthematic/homebrew-tap)
+[![GitHub Release](https://img.shields.io/github/v/release/mxthematic/openproof)](https://github.com/mxthematic/openproof/releases)
+[![CI](https://img.shields.io/github/actions/workflow/status/mxthematic/openproof/ci.yml?branch=master&label=CI)](https://github.com/mxthematic/openproof/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Formal math proofs, conversationally.
 
 ## What is this
