@@ -6,257 +6,23 @@
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
-use std::path::Path;
 use std::sync::Mutex;
 use std::time::Instant;
 
 use anyhow::{bail, Result};
 
-use openproof_lean::goal_state::AttemptResult;
-use openproof_lean::lsp_mcp::LeanLspMcp;
 use openproof_lean::pantograph::Pantograph;
 
-use crate::cache::{hash_goals, TacticCache};
+use openproof_protocol::{GoalStatus, ProofGoal};
+
+use crate::cache::hash_goals;
 use crate::config::{SearchResult, TacticSearchConfig};
 
-/// A node in the search tree.
-#[derive(Debug, Clone)]
-struct SearchNode {
-    /// Length-normalized priority (milliunits): lower is better.
-    /// Computed as `(remaining_goals + length_penalty * depth) * 1000`.
-    priority: u64,
-    /// Raw remaining goal count (used for best-partial tracking).
-    score: usize,
-    /// Tactics applied so far from the initial state.
-    tactics: Vec<String>,
-    /// Goal strings after applying these tactics.
-    goals: Vec<String>,
-    /// The line in the file where the sorry is.
-    sorry_line: usize,
-}
-
-impl SearchNode {
-    fn new(
-        goals: Vec<String>,
-        tactics: Vec<String>,
-        sorry_line: usize,
-        length_penalty: f64,
-    ) -> Self {
-        let score = goals.len();
-        let priority = ((score as f64 + length_penalty * tactics.len() as f64) * 1000.0) as u64;
-        Self {
-            priority,
-            score,
-            tactics,
-            goals,
-            sorry_line,
-        }
-    }
-}
-
-impl PartialEq for SearchNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.priority == other.priority
-    }
-}
-
-impl Eq for SearchNode {}
-
-impl PartialOrd for SearchNode {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for SearchNode {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Min-heap by priority (lower = better), break ties by shorter proof
-        Reverse(self.priority)
-            .cmp(&Reverse(other.priority))
-            .then_with(|| self.tactics.len().cmp(&other.tactics.len()))
-    }
-}
+/// Callback for emitting proof goal updates during search.
+pub type GoalUpdateFn = dyn Fn(ProofGoal) + Send + Sync;
 
 /// Callback for LLM tactic proposal. Returns candidate tactics for a goal state.
 pub type ProposeFn = Box<dyn Fn(&str, &str, usize) -> Result<Vec<String>> + Send>;
-
-/// Run best-first search on a single sorry position.
-///
-/// Arguments:
-/// - `lsp`: the lean-lsp-mcp client (mutex-protected for shared access)
-/// - `propose_fn`: callback that asks the LLM to propose k tactics for a goal
-/// - `file_path`: absolute path to the Lean file being worked on
-/// - `sorry_line`: 1-indexed line number of the sorry to fill
-/// - `retrieval_context`: corpus hits to include in the proposal prompt
-/// - `config`: search parameters
-pub fn best_first_search(
-    lsp: &Mutex<LeanLspMcp>,
-    propose_fn: &ProposeFn,
-    file_path: &Path,
-    sorry_line: usize,
-    retrieval_context: &str,
-    config: &TacticSearchConfig,
-) -> Result<SearchResult> {
-    let start = Instant::now();
-    let mut expansions: usize = 0;
-    let mut cache = TacticCache::new();
-    let mut seen_states: HashSet<u64> = HashSet::new();
-    let mut frontier: BinaryHeap<SearchNode> = BinaryHeap::new();
-
-    // Get initial goal state
-    let initial_goals = {
-        let mut mcp = lsp.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-        let goal_state = mcp.get_goals(file_path, sorry_line, None)?;
-        goal_state
-            .goals_before
-            .or(goal_state.goals)
-            .unwrap_or_default()
-    };
-
-    if initial_goals.is_empty() {
-        // No goals at this position -- either already solved or not a sorry.
-        // Return Exhausted rather than Solved with empty tactics, since we
-        // didn't actually find the tactic that closes the goal.
-        return Ok(SearchResult::Exhausted { expansions: 0 });
-    }
-
-    let initial_hash = hash_goals(&initial_goals);
-    seen_states.insert(initial_hash);
-
-    frontier.push(SearchNode::new(
-        initial_goals.clone(),
-        vec![],
-        sorry_line,
-        config.length_penalty,
-    ));
-
-    let mut best_partial = SearchNode {
-        priority: u64::MAX,
-        score: usize::MAX,
-        tactics: vec![],
-        goals: initial_goals,
-        sorry_line,
-    };
-
-    while let Some(node) = frontier.pop() {
-        // Check timeout
-        if start.elapsed() > config.timeout {
-            return Ok(SearchResult::Timeout {
-                best_tactics: best_partial.tactics,
-                remaining_goals: best_partial.score,
-            });
-        }
-
-        // Check expansion budget
-        if expansions >= config.max_expansions {
-            return Ok(SearchResult::Exhausted { expansions });
-        }
-
-        // Track best partial result
-        if node.score < best_partial.score {
-            best_partial = node.clone();
-        }
-
-        // Use the first goal as the focus for tactic generation
-        let goal_text = node.goals.first().map(|s| s.as_str()).unwrap_or("");
-        if goal_text.is_empty() {
-            continue;
-        }
-
-        // Ask LLM for candidate tactics
-        let candidates = match propose_fn(goal_text, retrieval_context, config.beam_width) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        if candidates.is_empty() {
-            continue;
-        }
-
-        // Filter out candidates we've already cached for this exact goal
-        let mut to_screen: Vec<String> = Vec::new();
-        let mut cached_results: Vec<(String, AttemptResult)> = Vec::new();
-
-        for tactic in &candidates {
-            if let Some(cached) = cache.get(goal_text, tactic) {
-                cached_results.push((tactic.clone(), cached.clone()));
-            } else {
-                to_screen.push(tactic.clone());
-            }
-        }
-
-        // Screen uncached tactics via LSP
-        let mut screen_results: Vec<AttemptResult> = Vec::new();
-        if !to_screen.is_empty() {
-            let result = {
-                let mut mcp = lsp.lock().map_err(|e| anyhow::anyhow!("lock: {e}"))?;
-                if !mcp.is_alive() {
-                    bail!("lean-lsp-mcp process died during search");
-                }
-                mcp.screen_tactics(file_path, node.sorry_line, None, &to_screen)?
-            };
-
-            for item in result.items {
-                cache.insert(goal_text, &item.snippet, item.clone());
-                screen_results.push(item);
-            }
-            expansions += to_screen.len();
-        }
-
-        // Process all results (cached + freshly screened)
-        let all_results: Vec<AttemptResult> = cached_results
-            .into_iter()
-            .map(|(_, r)| r)
-            .chain(screen_results)
-            .collect();
-
-        for item in all_results {
-            if !item.succeeded() {
-                continue;
-            }
-
-            // Goal closed
-            if item.is_solved() {
-                let mut tactics = node.tactics.clone();
-                tactics.push(item.snippet);
-                return Ok(SearchResult::Solved {
-                    tactics,
-                    file_content: String::new(), // caller fills this
-                });
-            }
-
-            // New sub-goals
-            let new_goals = &item.goals;
-            let goals_hash = hash_goals(new_goals);
-
-            // Transposition table: skip if we've seen this state
-            if config.dedup && !seen_states.insert(goals_hash) {
-                continue;
-            }
-
-            let mut new_tactics = node.tactics.clone();
-            new_tactics.push(item.snippet.clone());
-
-            frontier.push(SearchNode::new(
-                new_goals.clone(),
-                new_tactics,
-                node.sorry_line,
-                config.length_penalty,
-            ));
-        }
-    }
-
-    // Frontier exhausted
-    if best_partial.score < usize::MAX && !best_partial.tactics.is_empty() {
-        Ok(SearchResult::Partial {
-            tactics: best_partial.tactics,
-            remaining_goals: best_partial.score,
-            file_content: String::new(),
-        })
-    } else {
-        Ok(SearchResult::Exhausted { expansions })
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Pantograph-native search (state-based, ~1000x faster)
@@ -326,6 +92,7 @@ pub fn pantograph_best_first_search(
     type_expr: &str,
     retrieval_context: &str,
     config: &TacticSearchConfig,
+    on_goal_update: Option<&GoalUpdateFn>,
 ) -> Result<SearchResult> {
     let start = Instant::now();
     let mut expansions: usize = 0;
@@ -357,12 +124,23 @@ pub fn pantograph_best_first_search(
     };
     seen_states.insert(initial_hash);
 
+    let root_goal_id = format!("pg-{initial_state_id}");
     frontier.push(PantographNode::new(
         vec![type_expr.to_string()],
         vec![],
         initial_state_id,
         config.length_penalty,
     ));
+
+    if let Some(cb) = on_goal_update {
+        cb(ProofGoal {
+            id: root_goal_id.clone(),
+            goal_text: type_expr.to_string(),
+            status: GoalStatus::Open,
+            state_id: Some(initial_state_id),
+            ..Default::default()
+        });
+    }
 
     let mut best_partial = PantographNode {
         priority: u64::MAX,
@@ -428,10 +206,24 @@ pub fn pantograph_best_first_search(
             let new_state_id = result.new_state_id.unwrap();
             allocated_states.push(new_state_id);
 
+            let child_goal_id = format!("pg-{new_state_id}");
+            let parent_id = format!("pg-{}", node.state_id);
+
             // Proof complete!
             if result.remaining_goals.is_empty() {
                 let mut tactics = node.tactics.clone();
                 tactics.push(tactic.clone());
+                if let Some(cb) = on_goal_update {
+                    cb(ProofGoal {
+                        id: child_goal_id,
+                        goal_text: String::new(),
+                        status: GoalStatus::Closed,
+                        parent_goal_id: Some(parent_id),
+                        tactic_applied: Some(tactic.clone()),
+                        state_id: Some(new_state_id),
+                        ..Default::default()
+                    });
+                }
                 cleanup_states(pantograph, &allocated_states);
                 return Ok(SearchResult::Solved {
                     tactics,
@@ -447,6 +239,18 @@ pub fn pantograph_best_first_search(
 
             let mut new_tactics = node.tactics.clone();
             new_tactics.push(tactic.clone());
+
+            if let Some(cb) = on_goal_update {
+                cb(ProofGoal {
+                    id: child_goal_id,
+                    goal_text: result.remaining_goals.join("\n"),
+                    status: GoalStatus::Open,
+                    parent_goal_id: Some(parent_id),
+                    tactic_applied: Some(tactic.clone()),
+                    state_id: Some(new_state_id),
+                    ..Default::default()
+                });
+            }
 
             frontier.push(PantographNode::new(
                 result.remaining_goals,

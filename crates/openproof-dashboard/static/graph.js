@@ -4,303 +4,283 @@ import { ReactFlow, Background, Controls, MiniMap, Handle, Position } from "http
 
 const h = htm.bind(React.createElement);
 
-// ── Color helpers ──────────────────────────────────────────────────────
+// ── Colors ─────────────────────────────────────────────────────────────
 
-const statusColor = (s) => {
-  const st = String(s || "").toLowerCase();
-  if (st === "verified" || st === "done") return "#22c55e";
-  if (st === "proving" || st === "running") return "#eab308";
-  if (st === "failed" || st === "error" || st === "blocked") return "#ef4444";
-  return "#525252";
+const STATUS_COLORS = {
+  open: "#f59e0b",
+  in_progress: "#3b82f6",
+  closed: "#22c55e",
+  failed: "#ef4444",
 };
 
-const roleColor = (r) => {
-  const role = String(r || "").toLowerCase();
-  if (role === "prover") return "#3b82f6";
-  if (role === "repairer") return "#f59e0b";
-  if (role === "planner") return "#8b5cf6";
-  if (role === "retriever") return "#06b6d4";
-  if (role === "critic") return "#ec4899";
-  return "#6b7280";
+const ATTRIBUTION_COLORS = {
+  "agent:prover": "#3b82f6",
+  "agent:repairer": "#f59e0b",
+  "agent:planner": "#8b5cf6",
+  "agent:retriever": "#06b6d4",
+  "agent:critic": "#ec4899",
+  bfs: "#22c55e",
 };
 
-const kindIcon = (k) => {
-  const kind = String(k || "").toLowerCase();
-  if (kind === "theorem") return "\u{1D4AF}";
-  if (kind === "lemma") return "\u{2113}";
-  if (kind === "def" || kind === "artifact") return "\u{1D49F}";
-  if (kind === "axiom") return "\u{1D49C}";
-  return "\u25CB";
+const STATUS_ICONS = {
+  open: "\u25CB",
+  in_progress: "\u25D4",
+  closed: "\u2713",
+  failed: "\u2717",
 };
 
-// ── Node components ────────────────────────────────────────────────────
+// ── Tree layout ────────────────────────────────────────────────────────
 
-function ProofNodeComponent({ data }) {
-  const borderColor = statusColor(data.status);
-  return h`
-    <div style=${{
-      background: "#1a1a1a",
-      border: "2px solid " + borderColor,
-      borderRadius: 8,
-      padding: "8px 12px",
-      minWidth: 160,
-      maxWidth: 240,
-      fontFamily: "system-ui, sans-serif",
-    }}>
-      <${Handle} type="target" position=${Position.Top} style=${{ background: "#555" }} />
-      <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-        <span style=${{ fontSize: 14 }}>${kindIcon(data.kind)}</span>
-        <strong style=${{ color: "#e5e5e5", fontSize: 12 }}>${data.label}</strong>
-      </div>
-      <div style=${{ color: "#a3a3a3", fontSize: 10, marginBottom: 2 }}>
-        ${data.kind || "node"} \u00b7 ${data.status}
-      </div>
-      ${data.statement ? h`
-        <div style=${{ color: "#525252", fontSize: 9, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
-          ${data.statement}
-        </div>
-      ` : null}
-      <${Handle} type="source" position=${Position.Bottom} style=${{ background: "#555" }} />
-    </div>
-  `;
+const H_GAP = 240;
+const V_GAP = 120;
+
+function computeTreeLayout(goals) {
+  const childrenMap = new Map();
+  const goalMap = new Map();
+  const roots = [];
+
+  for (const g of goals) {
+    goalMap.set(g.id, g);
+    const pid = g.parent_goal_id || g.parentGoalId;
+    if (pid) {
+      if (!childrenMap.has(pid)) childrenMap.set(pid, []);
+      childrenMap.get(pid).push(g.id);
+    } else {
+      roots.push(g.id);
+    }
+  }
+
+  // Compute subtree widths (leaf = 1)
+  const widths = new Map();
+  function subtreeWidth(id) {
+    if (widths.has(id)) return widths.get(id);
+    const ch = childrenMap.get(id) || [];
+    const w = ch.length === 0 ? 1 : ch.reduce((sum, c) => sum + subtreeWidth(c), 0);
+    widths.set(id, w);
+    return w;
+  }
+  for (const r of roots) subtreeWidth(r);
+
+  // Assign positions
+  const positions = new Map();
+  function layout(id, x, depth) {
+    positions.set(id, { x, y: depth * V_GAP });
+    const ch = childrenMap.get(id) || [];
+    if (ch.length === 0) return;
+    const totalW = ch.reduce((s, c) => s + subtreeWidth(c), 0);
+    let curX = x - ((totalW - 1) * H_GAP) / 2;
+    for (const c of ch) {
+      const w = subtreeWidth(c);
+      layout(c, curX + ((w - 1) * H_GAP) / 2, depth + 1);
+      curX += w * H_GAP;
+    }
+  }
+
+  // Layout each root with horizontal offset between them
+  let rootX = 0;
+  for (const r of roots) {
+    const w = subtreeWidth(r);
+    layout(r, rootX + ((w - 1) * H_GAP) / 2, 0);
+    rootX += w * H_GAP + H_GAP;
+  }
+
+  return { positions, childrenMap };
 }
 
-function BranchNodeComponent({ data }) {
-  const color = roleColor(data.role);
-  const hasSnippet = !!(data.lean_snippet || data.leanSnippet || "").trim();
-  return h`
-    <div style=${{
-      background: "#111",
-      border: "1.5px solid " + color,
-      borderRadius: 5,
-      padding: "6px 10px",
-      minWidth: 130,
-      opacity: hasSnippet ? 1 : 0.7,
-      fontFamily: "system-ui, sans-serif",
-    }}>
-      <${Handle} type="target" position=${Position.Top} style=${{ background: color }} />
-      <div style=${{ color, fontSize: 10, fontWeight: 600 }}>
-        ${data.role}${data.hidden ? " (hidden)" : ""}
-        ${hasSnippet ? h`<span style=${{ color: "#22c55e", marginLeft: 4 }}>\u25CF</span>` : null}
-      </div>
-      <div style=${{ color: "#737373", fontSize: 9 }}>
-        ${String(data.status || "idle")} \u00b7 score ${(data.score || 0).toFixed(0)} \u00b7 ${data.attempt_count || data.attemptCount || 0} tries
-      </div>
-      ${data.summary ? h`
-        <div style=${{ color: "#525252", fontSize: 8, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 180 }}>
-          ${data.summary}
-        </div>
-      ` : null}
-    </div>
-  `;
-}
+// ── GoalNode component ─────────────────────────────────────────────────
 
 function GoalNodeComponent({ data }) {
-  const colors = { open: "#f59e0b", in_progress: "#3b82f6", closed: "#22c55e", failed: "#ef4444" };
-  const color = colors[data.status] || "#737373";
-  const failCount = (data.failed_tactics || data.failedTactics || []).length;
+  const [expanded, setExpanded] = useState(false);
+  const status = String(data.status || "open").toLowerCase();
+  const color = STATUS_COLORS[status] || "#737373";
+  const isLeaf = !data._hasChildren;
+  const isFrontier = isLeaf && status === "open";
+  const isActive = status === "in_progress";
+  const attribution = data.solved_by || data.solvedBy || (status === "closed" ? "bfs" : null);
+  const attrColor = attribution ? (ATTRIBUTION_COLORS[attribution] || "#737373") : null;
+
+  const goalText = data.goal_text || data.goalText || "";
+  const failedTactics = data.failed_tactics || data.failedTactics || [];
+  const attempts = data.attempts || 0;
+
   return h`
-    <div style=${{
-      background: "#0a0a0a",
-      border: "1.5px dashed " + color,
-      borderRadius: 6,
-      padding: "6px 10px",
-      minWidth: 140,
-      maxWidth: 220,
+    <div onClick=${() => setExpanded(!expanded)} style=${{
+      background: "#0f0f0f",
+      border: "2px solid " + color,
+      borderRadius: 8,
+      padding: "8px 12px",
+      minWidth: 180,
+      maxWidth: expanded ? 400 : 260,
       fontFamily: "system-ui, sans-serif",
+      cursor: "pointer",
+      transition: "all 0.2s",
+      animation: isFrontier ? "frontier-pulse 2s infinite" : isActive ? "active-pulse 1.5s infinite" : "none",
     }}>
       <${Handle} type="target" position=${Position.Top} style=${{ background: color }} />
-      <div style=${{ display: "flex", alignItems: "center", gap: 4, marginBottom: 2 }}>
-        <span style=${{ color, fontSize: 10, fontWeight: 600 }}>
-          ${data.status === "closed" ? "\u2713" : data.status === "failed" ? "\u2717" : "\u25CB"} goal
+
+      <div style=${{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+        <span style=${{ color, fontSize: 13, fontWeight: 700 }}>
+          ${STATUS_ICONS[status] || "\u25CB"}
         </span>
-        ${failCount > 0 ? h`
-          <span style=${{ background: "#7f1d1d", color: "#fca5a5", fontSize: 8, padding: "1px 4px", borderRadius: 3 }}>
-            ${failCount} failed
-          </span>
+        <span style=${{ color: "#a3a3a3", fontSize: 10, fontWeight: 500 }}>
+          ${status}
+        </span>
+        ${attribution ? h`
+          <span style=${{
+            background: attrColor + "22",
+            color: attrColor,
+            fontSize: 8,
+            fontWeight: 600,
+            padding: "1px 6px",
+            borderRadius: 3,
+            marginLeft: "auto",
+          }}>${attribution}</span>
         ` : null}
-        ${data.attempts > 0 ? h`
-          <span style=${{ color: "#525252", fontSize: 8 }}>${data.attempts} tried</span>
+        ${isFrontier ? h`
+          <span style=${{
+            background: "#78350f",
+            color: "#fbbf24",
+            fontSize: 8,
+            fontWeight: 600,
+            padding: "1px 6px",
+            borderRadius: 3,
+            marginLeft: attribution ? 0 : "auto",
+          }}>frontier</span>
         ` : null}
       </div>
-      <div style=${{ color: "#a3a3a3", fontSize: 9, fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
-        ${(data.goal_text || data.goalText || "").substring(0, 60)}
+
+      <div style=${{
+        color: "#d4d4d4",
+        fontSize: 10,
+        fontFamily: "monospace",
+        overflow: expanded ? "auto" : "hidden",
+        textOverflow: expanded ? "unset" : "ellipsis",
+        whiteSpace: expanded ? "pre-wrap" : "nowrap",
+        maxWidth: expanded ? 380 : 240,
+        maxHeight: expanded ? 200 : "1.4em",
+        lineHeight: "1.4",
+      }}>
+        ${goalText || "(empty goal)"}
       </div>
-      ${data.tactic_applied || data.tacticApplied ? h`
-        <div style=${{ color: "#22c55e", fontSize: 8, marginTop: 2 }}>
-          via: ${data.tactic_applied || data.tacticApplied}
+
+      ${expanded && failedTactics.length > 0 ? h`
+        <div style=${{ marginTop: 6, fontSize: 9, color: "#ef4444" }}>
+          <div style=${{ fontWeight: 600, marginBottom: 2 }}>Failed tactics (${failedTactics.length}):</div>
+          ${failedTactics.slice(0, 5).map((t, i) => h`
+            <div key=${i} style=${{ color: "#a3a3a3", fontFamily: "monospace", paddingLeft: 8 }}>${t}</div>
+          `)}
+          ${failedTactics.length > 5 ? h`<div style=${{ color: "#525252", paddingLeft: 8 }}>...and ${failedTactics.length - 5} more</div>` : null}
         </div>
       ` : null}
+
+      ${expanded && attempts > 0 ? h`
+        <div style=${{ marginTop: 4, fontSize: 9, color: "#737373" }}>
+          ${attempts} tactic${attempts !== 1 ? "s" : ""} attempted
+        </div>
+      ` : null}
+
       <${Handle} type="source" position=${Position.Bottom} style=${{ background: color }} />
     </div>
   `;
 }
 
-const nodeTypes = {
-  proofNode: ProofNodeComponent,
-  branchNode: BranchNodeComponent,
-  goalNode: GoalNodeComponent,
-};
+const nodeTypes = { goalNode: GoalNodeComponent };
+
+// ── Stats bar ──────────────────────────────────────────────────────────
+
+function StatsBar({ stats, proof }) {
+  if (!stats) return null;
+  const verification = proof?.last_verification;
+  return h`
+    <div className="graph-info">
+      <span>Phase: <strong>${proof?.phase || "idle"}</strong></span>
+      <span>\u00a0\u00b7\u00a0 Goals: ${stats.total}</span>
+      <span>\u00a0\u00b7\u00a0 Closed: <span style=${{ color: "#22c55e" }}>${stats.closed}</span></span>
+      <span>\u00a0\u00b7\u00a0 Open: <span style=${{ color: "#f59e0b" }}>${stats.open}</span></span>
+      ${stats.failed > 0 ? h`<span>\u00a0\u00b7\u00a0 Failed: <span style=${{ color: "#ef4444" }}>${stats.failed}</span></span>` : null}
+      ${stats.frontier > 0 ? h`<span>\u00a0\u00b7\u00a0 BFS frontier: <span style=${{ color: "#fbbf24" }}>${stats.frontier}</span></span>` : null}
+      ${verification ? h`
+        <span>\u00a0\u00b7\u00a0
+          <span style=${{ color: verification.ok ? "#22c55e" : "#ef4444" }}>
+            ${verification.ok ? "Lean verified" : "Lean failed"}
+          </span>
+        </span>
+      ` : null}
+    </div>
+  `;
+}
 
 // ── GraphTab ───────────────────────────────────────────────────────────
 
 export function GraphTab({ session }) {
   const proof = session?.proof;
-  const proofNodes = proof?.nodes || [];
-  const allBranches = proof?.branches || [];
-  const [showBranches, setShowBranches] = useState(false);
-  const branches = showBranches ? allBranches : [];
+  const goals = proof?.proof_goals || proof?.proofGoals || [];
 
-  if (proofNodes.length === 0 && allBranches.length === 0) {
-    return h`<div className="graph-container">No proof nodes to visualize</div>`;
-  }
+  const { flowNodes, flowEdges, stats } = useMemo(() => {
+    if (goals.length === 0) return { flowNodes: [], flowEdges: [], stats: null };
 
-  const { flowNodes, flowEdges } = useMemo(() => {
-    const nodes = [];
-    const edges = [];
-    const hasTree = proofNodes.some(n => n.parent_id || n.parentId);
+    const { positions, childrenMap } = computeTreeLayout(goals);
 
-    if (hasTree) {
-      const byDepth = {};
-      for (const n of proofNodes) {
-        const d = n.depth || 0;
-        if (!byDepth[d]) byDepth[d] = [];
-        byDepth[d].push(n);
-      }
-      for (const n of proofNodes) {
-        const d = n.depth || 0;
-        const siblings = byDepth[d] || [];
-        const idx = siblings.indexOf(n);
-        const totalWidth = siblings.length * 220;
-        const startX = -(totalWidth / 2) + 110;
-        nodes.push({
-          id: n.id, type: "proofNode",
-          position: { x: startX + idx * 220, y: d * 120 },
-          draggable: true,
-          data: { ...n, _nodeColor: statusColor(n.status) },
-        });
-      }
-    } else {
-      const cols = 2;
-      for (let i = 0; i < proofNodes.length; i++) {
-        const n = proofNodes[i];
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        nodes.push({
-          id: n.id, type: "proofNode",
-          position: { x: col * 280, y: row * 100 },
-          draggable: true,
-          data: { ...n, _nodeColor: statusColor(n.status) },
-        });
-      }
-    }
+    const nodes = goals.map((g) => ({
+      id: g.id,
+      type: "goalNode",
+      position: positions.get(g.id) || { x: 0, y: 0 },
+      draggable: true,
+      data: {
+        ...g,
+        _hasChildren: childrenMap.has(g.id) && childrenMap.get(g.id).length > 0,
+        _nodeColor: STATUS_COLORS[String(g.status || "open").toLowerCase()] || "#737373",
+      },
+    }));
 
-    let prevId = null;
-    for (const n of proofNodes) {
-      const parentId = n.parent_id || n.parentId;
-      if (parentId) {
-        edges.push({
-          id: "tree-" + n.id, source: parentId, target: n.id,
-          style: { stroke: "#3b82f6", strokeWidth: 2 },
-          animated: n.status === "proving",
-        });
-      } else if (prevId && !hasTree) {
-        edges.push({
-          id: "flow-" + n.id, source: prevId, target: n.id,
-          style: { stroke: "#333", strokeWidth: 1 },
+    const edges = goals
+      .filter((g) => g.parent_goal_id || g.parentGoalId)
+      .map((g) => {
+        const tactic = g.tactic_applied || g.tacticApplied || "";
+        const st = String(g.status || "open").toLowerCase();
+        return {
+          id: "tactic-" + g.id,
+          source: g.parent_goal_id || g.parentGoalId,
+          target: g.id,
+          label: tactic.length > 40 ? tactic.substring(0, 37) + "..." : tactic,
+          labelStyle: { fill: "#22c55e", fontSize: 9, fontFamily: "monospace" },
+          style: { stroke: STATUS_COLORS[st] || "#525252", strokeWidth: 1.5 },
           type: "smoothstep",
-        });
-      }
-      prevId = n.id;
-
-      for (const depId of (n.depends_on || n.dependsOn || [])) {
-        edges.push({
-          id: "dep-" + n.id + "-" + depId, source: depId,
-          target: n.id,
-          style: { stroke: "#6b7280", strokeWidth: 1, strokeDasharray: "4 3" },
-        });
-      }
-    }
-
-    const maxDepth = Math.max(0, ...proofNodes.map((n) => n.depth || 0));
-    const branchY = (maxDepth + 1) * 100 + 40;
-    const branchCols = {};
-
-    for (const b of branches) {
-      const focusId = b.focus_node_id || b.focusNodeId || proofNodes[0]?.id;
-      if (!branchCols[focusId]) branchCols[focusId] = 0;
-      const col = branchCols[focusId]++;
-      const parentNode = nodes.find((n) => n.id === focusId);
-      const baseX = parentNode ? parentNode.position.x : col * 160;
-      const bId = "branch-" + b.id;
-      nodes.push({
-        id: bId, type: "branchNode",
-        position: { x: baseX + col * 160, y: branchY },
-        draggable: true,
-        data: { ...b, _nodeColor: roleColor(b.role) },
+          animated: st === "in_progress",
+        };
       });
-      if (focusId) {
-        edges.push({
-          id: "agent-" + b.id, source: focusId, target: bId,
-          style: { stroke: roleColor(b.role), strokeWidth: 1, strokeDasharray: "4 3", opacity: 0.5 },
-        });
-      }
+
+    // Compute stats
+    let closed = 0, open = 0, failed = 0, inProgress = 0, frontier = 0;
+    for (const g of goals) {
+      const s = String(g.status || "open").toLowerCase();
+      if (s === "closed") closed++;
+      else if (s === "failed") failed++;
+      else if (s === "in_progress") inProgress++;
+      else open++;
+      const isLeaf = !childrenMap.has(g.id) || childrenMap.get(g.id).length === 0;
+      if (s === "open" && isLeaf) frontier++;
     }
 
-    const proofGoals = proof?.proof_goals || proof?.proofGoals || [];
-    const goalY = (maxDepth + 1) * 100 + (branches.length > 0 ? 180 : 40);
-    for (let i = 0; i < proofGoals.length; i++) {
-      const g = proofGoals[i];
-      const gId = "goal-" + g.id;
-      nodes.push({
-        id: gId, type: "goalNode",
-        position: { x: i * 200 - (proofGoals.length * 100), y: goalY + (g.parent_goal_id || g.parentGoalId ? 80 : 0) },
-        draggable: true, data: g,
-      });
-      const parentGoalId = g.parent_goal_id || g.parentGoalId;
-      if (parentGoalId) {
-        edges.push({
-          id: "goaltree-" + g.id, source: "goal-" + parentGoalId, target: gId,
-          style: { stroke: "#3b82f6", strokeWidth: 1, strokeDasharray: "2 2" },
-          label: g.tactic_applied || g.tacticApplied || "",
-          labelStyle: { fill: "#22c55e", fontSize: 8 },
-        });
-      }
-      if (!parentGoalId && proofNodes.length > 0) {
-        const activeNodeId = proof?.active_node_id || proof?.activeNodeId || proofNodes[0]?.id;
-        edges.push({
-          id: "nodegoal-" + g.id, source: activeNodeId, target: gId,
-          style: { stroke: "#f59e0b", strokeWidth: 1, strokeDasharray: "3 3", opacity: 0.6 },
-        });
-      }
-    }
+    return {
+      flowNodes: nodes,
+      flowEdges: edges,
+      stats: { total: goals.length, closed, open, failed, inProgress, frontier },
+    };
+  }, [goals]);
 
-    return { flowNodes: nodes, flowEdges: edges };
-  }, [proofNodes, branches, proof]);
-
-  const verification = proof?.last_verification;
-  const attemptNum = proof?.attempt_number || proof?.attemptNumber || 0;
+  if (goals.length === 0) {
+    return h`<div className="graph-container">
+      <div style=${{ textAlign: "center", color: "#737373" }}>
+        <div style=${{ fontSize: 14, marginBottom: 8 }}>No proof goals yet</div>
+        <div style=${{ fontSize: 11 }}>Start a proof to see the tactic tree</div>
+      </div>
+    </div>`;
+  }
 
   return h`
     <div className="graph-canvas" style=${{ display: "flex", flexDirection: "column", height: "calc(100vh - 120px)" }}>
-      <div className="graph-info">
-        <span>Phase: <strong>${proof?.phase || "idle"}</strong></span>
-        <span>\u00a0\u00b7\u00a0 Nodes: ${proofNodes.length}</span>
-        <span>\u00a0\u00b7\u00a0 Goals: ${(proof?.proof_goals || proof?.proofGoals || []).length}</span>
-        <span>\u00a0\u00b7\u00a0 Attempts: ${attemptNum}</span>
-        <button onClick=${() => setShowBranches(!showBranches)} style=${{
-          marginLeft: 12, padding: "2px 8px", fontSize: 10, cursor: "pointer",
-          background: showBranches ? "#333" : "#1a1a1a", color: "#a3a3a3",
-          border: "1px solid #333", borderRadius: 4,
-        }}>${showBranches ? "Hide" : "Show"} agent branches (${allBranches.length})</button>
-        ${verification ? h`
-          <span>\u00a0\u00b7\u00a0
-            <span style=${{ color: verification.ok ? "#22c55e" : "#ef4444" }}>
-              ${verification.ok ? "Lean verified" : "Lean failed"}
-            </span>
-          </span>
-        ` : null}
-      </div>
+      <${StatsBar} stats=${stats} proof=${proof} />
       <div style=${{ flex: 1, width: "100%" }}>
         <${ReactFlow}
           nodes=${flowNodes}
@@ -308,7 +288,7 @@ export function GraphTab({ session }) {
           nodeTypes=${nodeTypes}
           fitView
           fitViewOptions=${{ padding: 0.3 }}
-          minZoom=${0.2}
+          minZoom=${0.1}
           maxZoom=${2}
           defaultViewport=${{ x: 0, y: 0, zoom: 0.8 }}
           proOptions=${{ hideAttribution: true }}

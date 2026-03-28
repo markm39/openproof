@@ -303,6 +303,15 @@ impl AppState {
                                 node.status = openproof_protocol::ProofNodeStatus::Proving;
                             }
                         }
+                        // Mark matching proof goals as closed by BFS (solved_by = None)
+                        for goal in &mut session.proof.proof_goals {
+                            if goal.sorry_line == Some(sorry_line)
+                                && goal.status != openproof_protocol::GoalStatus::Closed
+                            {
+                                goal.status = openproof_protocol::GoalStatus::Closed;
+                                // solved_by stays None = BFS implicit
+                            }
+                        }
                         session.proof.phase = "verifying".to_string();
                     }
                     if let Some(session) = self.current_session().cloned() {
