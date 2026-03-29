@@ -290,6 +290,7 @@ pub fn run_autonomous_step(
             &latest_session.proof.nodes,
             &latest_session.proof.branches,
         );
+        let nogood_ctx = openproof_core::derive_nogood_context(&latest_session.proof.nodes);
         let focus_node = basis
             .focus_node_id
             .as_deref()
@@ -314,7 +315,7 @@ pub fn run_autonomous_step(
                      3. Sketch how the sub-lemmas compose into the final proof\n\n\
                      The sub-lemmas should be EASIER to prove individually than the full goal.\n\
                      Each will be verified independently by Lean.\n\n\
-                     Current target: {target}\n\nFailed approach summary:\n{}",
+                     Current target: {target}\n\nFailed approach summary:\n{}{nogood_ctx}",
                     basis.attempt_count, basis.summary,
                 );
 
@@ -357,7 +358,7 @@ pub fn run_autonomous_step(
                      1. Emit LEMMA: <label> :: <Lean type signature>\n\
                      2. Give a brief justification of why this sub-lemma helps\n\
                      3. Sketch how the sub-lemmas compose into the final proof\n\n\
-                     Current target: {target}\n\nFailed approach summary:\n{}",
+                     Current target: {target}\n\nFailed approach summary:\n{}{nogood_ctx}",
                     failed_children.join(", "),
                     basis.summary,
                 );
@@ -402,7 +403,7 @@ pub fn run_autonomous_step(
                          1. Emit LEMMA: <label> :: <Lean type signature>\n\
                          2. Brief justification\n\
                          3. Sketch how they compose\n\n\
-                         Current target: {target}\n\nSummary:\n{}",
+                         Current target: {target}\n\nSummary:\n{}{nogood_ctx}",
                         basis.attempt_count, basis.summary,
                     );
 
