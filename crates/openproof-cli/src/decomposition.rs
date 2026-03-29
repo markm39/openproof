@@ -9,7 +9,7 @@
 //! when a leaf fails, analyze which ancestor decision caused the failure
 //! and backtrack there, not just to the immediate parent.
 
-use openproof_protocol::{ProofBranch, ProofNode, ProofNodeStatus, SearchAttemptMetrics};
+use openproof_protocol::{ProofBranch, ProofNode, ProofNodeStatus};
 use std::collections::HashMap;
 
 /// Score for a single leaf node based on its BFS search history.
@@ -119,7 +119,7 @@ pub fn compute_subtree_scores(
     for node in &sorted_nodes {
         let children = children_of.get(&node.id);
 
-        if children.is_none() || children.map_or(true, |c| c.is_empty()) {
+        if children.is_none_or(|c| c.is_empty()) {
             // Leaf node.
             let leaf_score = leaf_scores.get(&node.id).copied().unwrap_or(0.5);
             scores.insert(
@@ -133,7 +133,7 @@ pub fn compute_subtree_scores(
             );
         } else {
             // Interior node: min of children (AND-tree).
-            let child_ids = children.unwrap();
+            let child_ids = children.expect("checked above");
             let mut min_score: f32 = 1.0;
             let mut worst_id: Option<String> = None;
             let mut solved = 0usize;

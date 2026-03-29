@@ -1,5 +1,6 @@
 mod autonomous;
 mod autonomous_headless;
+#[allow(dead_code)]
 mod decomposition;
 mod event_loop;
 mod export;
