@@ -347,6 +347,61 @@ theorem mathd_algebra_156
     · nlinarith [h₄, hx3, hy2]
     · nlinarith [h₄, hx3, hy3]
 
+-- corpus: zero_add_nat
+theorem zero_add_nat (n : Nat) : 0 + n = n := by
+  exact Nat.zero_add n
+
+-- corpus: aime_1984_p1
+theorem aime_1984_p1
+  (u : ℕ → ℚ)
+  (h₀ : ∀ n, u (n + 1) = u n + 1)
+  (h₁ : ∑ k ∈ Finset.range 98, u k.succ = 137) :
+  ∑ k ∈ Finset.range 49, u (2 * k.succ) = 93 := by
+  have hu : ∀ n, u n = u 0 + n := by
+    intro n
+    induction n with
+    | zero =>
+        norm_num
+    | succ n ih =>
+        calc
+          u n.succ = u n + 1 := by
+            simpa [Nat.succ_eq_add_one] using h₀ n
+          _ = (u 0 + n) + 1 := by
+            rw [ih]
+          _ = u 0 + n.succ := by
+            norm_num [Nat.succ_eq_add_one, add_assoc, add_left_comm, add_comm]
+
+have hsum98 : (∑ k ∈ Finset.range 98, u k.succ : ℚ) = 98 * u 0 + 4851 := by
+    calc
+      (∑ k ∈ Finset.range 98, u k.succ : ℚ)
+          = ∑ k ∈ Finset.range 98, (u 0 + (k.succ : ℚ)) := by
+              apply Finset.sum_congr rfl
+              intro k hk
+              rw [hu k.succ]
+      _ = (∑ k ∈ Finset.range 98, (u 0 : ℚ)) + ∑ k ∈ Finset.range 98, (k.succ : ℚ) := by
+            rw [Finset.sum_add_distrib]
+      _ = 98 * u 0 + ∑ k ∈ Finset.range 98, (k.succ : ℚ) := by
+            simp
+      _ = 98 * u 0 + 4851 := by
+            norm_num
+
+have hsum49 : (∑ k ∈ Finset.range 49, u (2 * k.succ) : ℚ) = 49 * u 0 + 2450 := by
+    calc
+      (∑ k ∈ Finset.range 49, u (2 * k.succ) : ℚ)
+          = ∑ k ∈ Finset.range 49, (u 0 + (((2 * k.succ : ℕ) : ℚ))) := by
+              apply Finset.sum_congr rfl
+              intro k hk
+              rw [hu (2 * k.succ)]
+      _ = (∑ k ∈ Finset.range 49, (u 0 : ℚ)) +
+            ∑ k ∈ Finset.range 49, (((2 * k.succ : ℕ) : ℚ)) := by
+            rw [Finset.sum_add_distrib]
+      _ = 49 * u 0 + ∑ k ∈ Finset.range 49, (((2 * k.succ : ℕ) : ℚ)) := by
+            simp
+      _ = 49 * u 0 + 2450 := by
+            norm_num
+
+linarith [h₁, hsum98, hsum49]
+
 -- corpus: two_irreducible_in_Zsqrtd_neg_five_main
 theorem two_irreducible_in_Zsqrtd_neg_five_main : Irreducible (2 : ℤ√(-5)) := by
   exact two_irreducible_in_Zsqrtd_neg_five
@@ -414,8 +469,4 @@ lemma gap_three_of_ratio_three_halves {a b c : ℕ}
     (ha : 3 ≤ a) (hab : 3 * a ≤ 2 * b) (hbc : 3 * b ≤ 2 * c) :
     a + 3 ≤ c := by
   omega
-
--- corpus: zero_add_nat
-theorem zero_add_nat (n : Nat) : 0 + n = n := by
-  exact Nat.zero_add n
 
