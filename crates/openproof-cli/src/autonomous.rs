@@ -1290,26 +1290,49 @@ fn emit_search_result(
     line: usize,
     result: openproof_search::config::SearchResult,
 ) {
-    let (solved, tactics) = match &result {
-        openproof_search::config::SearchResult::Solved { tactics, .. } => (true, tactics.clone()),
-        openproof_search::config::SearchResult::Partial { tactics, .. } => (false, tactics.clone()),
-        _ => (false, vec![]),
-    };
-    let status = match &result {
-        openproof_search::config::SearchResult::Solved { .. } => "SOLVED",
-        openproof_search::config::SearchResult::Partial { .. } => "partial",
-        openproof_search::config::SearchResult::Exhausted { .. } => "exhausted",
-        openproof_search::config::SearchResult::Timeout { .. } => "timeout",
+    use openproof_search::config::SearchResult;
+
+    let (solved, tactics, remaining_goals, expansions, outcome) = match &result {
+        SearchResult::Solved { tactics, .. } => (true, tactics.clone(), Some(0), None, "solved"),
+        SearchResult::Partial {
+            tactics,
+            remaining_goals,
+            ..
+        } => (
+            false,
+            tactics.clone(),
+            Some(*remaining_goals),
+            None,
+            "partial",
+        ),
+        SearchResult::Exhausted { expansions } => {
+            (false, vec![], None, Some(*expansions), "exhausted")
+        }
+        SearchResult::Timeout {
+            best_tactics,
+            remaining_goals,
+        } => (
+            false,
+            best_tactics.clone(),
+            Some(*remaining_goals),
+            None,
+            "timeout",
+        ),
     };
     eprintln!(
-        "[tactic-search] Line {line}: {status} (tactics: {})",
-        tactics.join("; ")
+        "[tactic-search] Line {line}: {outcome} (tactics: {}, remaining: {}, expansions: {})",
+        tactics.join("; "),
+        remaining_goals.map_or("?".to_string(), |g| g.to_string()),
+        expansions.map_or("?".to_string(), |e| e.to_string()),
     );
     let _ = tx.send(AppEvent::TacticSearchComplete {
         node_id: node_id.to_string(),
         sorry_line: line,
         solved,
         tactics,
+        remaining_goals,
+        expansions,
+        search_outcome: outcome.to_string(),
     });
 }
 
